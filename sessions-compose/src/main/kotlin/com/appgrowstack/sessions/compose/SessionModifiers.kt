@@ -15,6 +15,10 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.appgrowstack.sessions.AppSessions
 import com.appgrowstack.sessions.SessionRules
 import java.util.concurrent.ConcurrentHashMap
@@ -67,11 +71,30 @@ public fun Modifier.sessionTarget(name: String): Modifier = sessionMark(SessionM
 /** Hides this element from the session recording. The light record keeps no pixels; the mark is placed now so the recording finds it. */
 public fun Modifier.sessionMask(): Modifier = sessionMark(SessionMarks.Kind.Mask)
 
-/** While this element is on screen, the recording takes no frames. */
+/**
+ * While this screen is shown, and while it lies under the shown screen (a screen pushed on it with
+ * Navigation Compose), the recording takes no frames (blank frames `no_capture` instead). Put it on the
+ * screen's root element. The hold follows the screen's lifecycle owner ([NoCaptureHold]).
+ */
 public fun Modifier.sessionNoCapture(): Modifier = composed {
-    DisposableEffect(Unit) {
-        AppSessions.current?.beginNoCapture()
-        onDispose { AppSessions.current?.endNoCapture() }
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val hold = AppSessions.current?.holdNoCapture() ?: return@DisposableEffect onDispose {}
+        val observer = object : LifecycleEventObserver {
+            override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> hold.ownerResumed()
+                    Lifecycle.Event.ON_DESTROY -> hold.ownerDestroyed()
+                    else -> Unit
+                }
+                if (hold.ended) source.lifecycle.removeObserver(this)
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose {
+            hold.left(ownerResumed = owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+            if (hold.ended) owner.lifecycle.removeObserver(observer)
+        }
     }
     this
 }

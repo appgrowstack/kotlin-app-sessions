@@ -12,15 +12,20 @@ import android.os.Looper
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Window
+import android.view.WindowManager
 import com.appgrowstack.sessions.AppSessions
 import com.appgrowstack.sessions.HangMonitor
 import com.appgrowstack.sessions.SessionBackVia
+import com.appgrowstack.sessions.SessionBlankReason
+import com.appgrowstack.sessions.SessionCaptureScene
 import com.appgrowstack.sessions.SessionDeviceInfo
 import com.appgrowstack.sessions.SessionExitInfo
 import com.appgrowstack.sessions.SessionPlatform
 import com.appgrowstack.sessions.SessionRect
+import com.appgrowstack.sessions.SessionRules
 import com.appgrowstack.sessions.SessionScreen
 import com.appgrowstack.sessions.SessionStateStore
+import com.appgrowstack.sessions.blankReason
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.hypot
@@ -64,6 +69,24 @@ public object SessionCapture {
         }
         main.postDelayed(tick, 5000)
         if (watchHangs) HangMonitor(sessions, store, { main.post(it) }).start()
+    }
+
+    /**
+     * Why a frame of `window` taken now would be blank, or null to take it: `FLAG_SECURE`, a
+     * `Modifier.sessionNoCapture()` that holds, the window without the focus (a dialog, a
+     * `ModalBottomSheet`, a focusable popup, the system's dialog or the notification shade over it:
+     * their text fields are out of reach of the marks), or the screen in `noCaptureScreens` (the
+     * manifest's `no_capture_screens`).
+     */
+    public fun blankReason(window: Window, sessions: AppSessions, noCaptureScreens: Set<String> = emptySet()): SessionBlankReason? {
+        val decor = window.peekDecorView()
+        val scene = SessionCaptureScene(
+            noCaptureHeld = sessions.noCaptureHeld,
+            overlayShown = decor == null || !decor.hasWindowFocus(),
+            secure = (window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE) != 0,
+            screen = sessions.currentScreen,
+        )
+        return SessionRules.blankReason(scene, noCaptureScreens)
     }
 
     /** The newest exit of an earlier process of this app (API 30 and later). */

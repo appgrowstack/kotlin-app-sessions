@@ -17,7 +17,7 @@ English | [Japanese](README.ja.md)
 - **Same rules as the iOS package.** `SessionRules` gives the same answers as swift-app-sessions on the shared tables
 - **Few dependencies.** `sessions-core` uses Kotlin's standard library only; `sessions-compose` adds the Android SDK and Compose ui and foundation
 
-The light record keeps no pixels. `Modifier.sessionMask()` and `Modifier.sessionNoCapture()` only place marks.
+The light record keeps no pixels. `Modifier.sessionMask()` and `Modifier.sessionNoCapture()` only place marks. A screen marked `Modifier.sessionNoCapture()` keeps the recording blank while it is shown and while it lies under the shown screen (a screen pushed on it with Navigation Compose), until it is popped. While a dialog, a `ModalBottomSheet` or anything else takes the window's focus, the recording is blank too. `SessionCapture.blankReason(window, sessions, noCaptureScreens)` gives the reason a frame taken now would be blank.
 
 ### Where the records go
 

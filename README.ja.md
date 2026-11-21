@@ -17,7 +17,7 @@ Androidアプリの中で人が何をしたかを、セッションごとに記�
 - **iOSのパッケージと同じ判定。** `SessionRules`は共通の表でswift-app-sessionsと同じ答えを出す
 - **依存が少ない。** `sessions-core`はKotlinの標準ライブラリだけ。`sessions-compose`はAndroidのSDKとComposeのuiとfoundationを足す
 
-軽い記録は画素を持たない。`Modifier.sessionMask()`と`Modifier.sessionNoCapture()`はマークを置くだけ。
+軽い記録は画素を持たない。`Modifier.sessionMask()`と`Modifier.sessionNoCapture()`はマークを置くだけ。`Modifier.sessionNoCapture()`を付けた画面は、見えている間と、Navigation Composeでその上に別の画面を開いている間（戻って閉じるまで）、録画を撮らない。ダイアログ・`ModalBottomSheet`など窓のフォーカスを取る物が出ている間も撮らない。今撮ると撮らない理由は`SessionCapture.blankReason(window, sessions, noCaptureScreens)`で分かる。
 
 ### 記録の送り先
 

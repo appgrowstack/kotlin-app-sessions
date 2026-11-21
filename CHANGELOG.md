@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `Modifier.sessionNoCapture()` holds until its screen's lifecycle owner is destroyed, or resumed
+  again after the mark left the composition, instead of ending when it leaves the composition. A
+  screen pushed on a marked screen with Navigation Compose stays blank until the marked screen is
+  popped. `AppSessions.beginNoCapture()`, `endNoCapture()` and `isCaptureSuppressed` are replaced by
+  `holdNoCapture()` (`NoCaptureHold`) and `noCaptureHeld`.
+
+### Added
+
+- `SessionCapture.blankReason(window, sessions, noCaptureScreens)`: why a frame taken now would be
+  blank, from `FLAG_SECURE`, the holds, the window without the focus (a dialog, a `ModalBottomSheet`,
+  a focusable popup or the system over it) and the manifest's `no_capture_screens`.
+- `SessionRules.blankReason(scene, noCaptureScreens)` with `SessionCaptureScene` and `SessionBlankReason`.
+
 ## [0.1.1] - 2026-11-22
 
 ### Changed

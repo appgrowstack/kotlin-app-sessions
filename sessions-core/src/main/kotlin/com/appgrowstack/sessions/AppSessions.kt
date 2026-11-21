@@ -59,7 +59,7 @@ public class AppSessions(
     private var rage: RageDetector
     private var backHint: Pair<SessionBackVia, Long>? = null
     private val scrolls = sortedMapOf<String, SessionRules.ScrollDepth>()
-    private var noCaptureDepth = 0
+    private val noCaptureHolds = mutableSetOf<NoCaptureHold>()
 
     init {
         val screen = deviceInfo().screen
@@ -77,8 +77,8 @@ public class AppSessions(
     public val currentScreen: String? get() = synchronized(lock) { navigator.current }
     /** The light record never captures frames (the recording does), so it never reports dead taps. */
     public val isCapturing: Boolean get() = false
-    /** A screen marked `Modifier.sessionNoCapture()` is on screen. */
-    public val isCaptureSuppressed: Boolean get() = synchronized(lock) { noCaptureDepth > 0 }
+    /** A `Modifier.sessionNoCapture()` holds: its screen is shown or lies under the shown one ([NoCaptureHold]). */
+    public val noCaptureHeld: Boolean get() = synchronized(lock) { noCaptureHolds.isNotEmpty() }
     /** Batches waiting for the sink. */
     public val waitingBatches: Int get() = synchronized(lock) { state.outbox.size + if (state.open?.pending?.isNotEmpty() == true) 1 else 0 }
 
@@ -324,8 +324,10 @@ public class AppSessions(
 
     // ---- Capture marks
 
-    public fun beginNoCapture(): Unit = synchronized(lock) { noCaptureDepth++ }
-    public fun endNoCapture(): Unit = synchronized(lock) { noCaptureDepth = max(0, noCaptureDepth - 1) }
+    /** A `Modifier.sessionNoCapture()` entered the composition. The hold lasts until [NoCaptureHold] ends it. */
+    public fun holdNoCapture(): NoCaptureHold = synchronized(lock) {
+        NoCaptureHold { hold -> synchronized(lock) { noCaptureHolds.remove(hold) } }.also { noCaptureHolds.add(it) }
+    }
 
     // ---- Sending
 
