@@ -83,9 +83,9 @@ dependencyResolutionManagement {
 ```kotlin
 dependencies {
     // Android: capture and the Compose modifiers (includes sessions-core)
-    implementation("com.github.appgrowstack.kotlin-app-sessions:sessions-compose:0.1.0")
+    implementation("com.github.appgrowstack.kotlin-app-sessions:sessions-compose:0.1.1")
     // Kotlin/JVM only, without Android
-    // implementation("com.github.appgrowstack.kotlin-app-sessions:sessions-core:0.1.0")
+    // implementation("com.github.appgrowstack.kotlin-app-sessions:sessions-core:0.1.1")
 }
 ```
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-22
+
+### Changed
+
+- The README and KDoc put `FileSessionStateStore` and `FileSessionSink` in `context.noBackupFilesDir`:
+  the state holds the install id and the open session, which must not come back on another device from
+  the automatic backup.
+
+### Fixed
+
+- NaN and infinite property values are dropped. Kept, they made the next save of the state throw on
+  the main thread.
+- A store whose save throws (a full disk) no longer crashes the app from `tick` or `enterBackground`.
+  The state stays unsaved and the next tick writes it again.
+
 ## [0.1.0] - 2026-11-21
 
 ### Added
