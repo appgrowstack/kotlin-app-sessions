@@ -1,8 +1,5 @@
 package com.appgrowstack.sessions
 
-/** This package's version, sent as `sdk_version`. */
-public const val SESSIONS_VERSION: String = "0.1.0"
-
 public data class SessionScreen(val w: Double, val h: Double, val scale: Double)
 
 /** What the platform knows about the device and the app. `sessions-compose` fills it on Android. */
@@ -21,7 +18,7 @@ public data class SessionDeviceInfo(
     val osVersion: String,
     val deviceModel: String,
     val screen: SessionScreen,
-    val sdkVersion: String = SESSIONS_VERSION,
+    val sdkVersion: String = SessionsSdk.VERSION,
 ) {
     public companion object
 }
