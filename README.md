@@ -60,9 +60,9 @@ class App : Application() {
 }
 ```
 
-### Connecting to appgrowstack
+### Connecting to a server
 
-This package works on its own and keeps the records wherever its sink puts them. Apps that use appgrowstack do not wire the server here: add the matching module of [kotlin-appgrowstack](https://github.com/appgrowstack/kotlin-appgrowstack), which connects this package to it.
+The package works on its own. To connect it to a server, add the matching module of the connector package [kotlin-appgrowstack](https://github.com/appgrowstack/kotlin-appgrowstack) instead of wiring a server here.
 
 ## Installation
 

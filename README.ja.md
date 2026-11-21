@@ -60,9 +60,9 @@ class App : Application() {
 }
 ```
 
-### appgrowstackにつなぐ
+### サーバーにつなぐ
 
-このパッケージは単体で動き、記録は送り先が置く所に残る。appgrowstackを使うアプリは、ここでサーバーをつながない。[kotlin-appgrowstack](https://github.com/appgrowstack/kotlin-appgrowstack)の対応するモジュールを足すと、このパッケージがappgrowstackにつながる。
+このパッケージは単体で使えます。サーバーにつなぐときは、このパッケージで送り先を書く代わりに、コネクターのパッケージ [kotlin-appgrowstack](https://github.com/appgrowstack/kotlin-appgrowstack) の対応するモジュールを足します。
 
 ## 入れ方
 
