@@ -126,7 +126,11 @@ public interface SessionStateStore {
     public fun hangMarker(): Boolean
 }
 
-/** `<directory>/sessions/state.json` and the hang marker `<directory>/sessions/hang` (on Android, `context.filesDir`). */
+/**
+ * `<directory>/sessions/state.json` and the hang marker `<directory>/sessions/hang`. On Android pass
+ * `context.noBackupFilesDir`: the state holds the install id and the open session, which must not come back on
+ * another device from the automatic backup.
+ */
 public class FileSessionStateStore(directory: File) : SessionStateStore {
     public val directory: File = File(directory, "sessions")
     private val file = File(this.directory, "state.json")

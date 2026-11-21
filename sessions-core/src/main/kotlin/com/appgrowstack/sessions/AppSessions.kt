@@ -10,8 +10,8 @@ import kotlin.math.max
  * rules, keeps what it has between launches and hands batches to the sink on `sender`.
  *
  * ```kotlin
- * val sessions = AppSessions(FileSessionSink(context.filesDir), deviceInfo = { SessionDeviceInfo.current(context, "play") },
- *     store = FileSessionStateStore(context.filesDir))
+ * val sessions = AppSessions(FileSessionSink(context.noBackupFilesDir), deviceInfo = { SessionDeviceInfo.current(context, "play") },
+ *     store = FileSessionStateStore(context.noBackupFilesDir))
  * SessionCapture.install(application, sessions)          // sessions-compose; starts the session
  * analytics.observe { name, props -> sessions.observe(name, props) }
  * ```
@@ -468,8 +468,14 @@ public class AppSessions(
     private fun save() {
         val open = state.open
         if (open != null) state = state.copy(open = open.copy(scrolls = pendingScrolls(open.lastT)))
-        store.save(state)
-        dirty = false
+        // A full disk or an app's store that throws must not crash the app from tick or enterBackground (on the
+        // main thread). The state stays dirty, so the next tick writes it again.
+        dirty = try {
+            store.save(state)
+            false
+        } catch (_: Exception) {
+            true
+        }
     }
 
     public companion object {

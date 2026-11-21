@@ -250,6 +250,8 @@ public object SessionRules {
         var dropped = false
         for ((key, value) in chosen) {
             if (value == null) continue
+            // NaN and infinity are not JSON numbers: kept, they would make every later save of the state throw
+            if (value is SessionValue.Decimal && !value.value.isFinite()) continue
             if (value is SessionValue.Text && value.value.length > MAX_PROP_LENGTH) {
                 dropped = true
                 continue

@@ -48,9 +48,9 @@ import com.appgrowstack.sessions.compose.current
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
-        val store = FileSessionStateStore(filesDir)
+        val store = FileSessionStateStore(noBackupFilesDir)
         val sessions = AppSessions(
-            sink = FileSessionSink(filesDir), // keep the records on the device
+            sink = FileSessionSink(noBackupFilesDir), // keep the records on the device
             deviceInfo = { SessionDeviceInfo.current(this, channel = "play") },
             store = store,
         )

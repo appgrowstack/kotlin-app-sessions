@@ -35,8 +35,8 @@ import kotlin.math.hypot
  * class App : Application() {
  *     override fun onCreate() {
  *         super.onCreate()
- *         val store = FileSessionStateStore(filesDir)
- *         val sessions = AppSessions(FileSessionSink(filesDir), { SessionDeviceInfo.current(this, "play") }, store)
+ *         val store = FileSessionStateStore(noBackupFilesDir)
+ *         val sessions = AppSessions(FileSessionSink(noBackupFilesDir), { SessionDeviceInfo.current(this, "play") }, store)
  *         SessionCapture.install(this, sessions, store)   // starts the session too
  *     }
  * }

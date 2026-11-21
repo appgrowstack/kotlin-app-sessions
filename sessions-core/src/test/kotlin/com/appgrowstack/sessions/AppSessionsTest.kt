@@ -269,6 +269,36 @@ class AppSessionsTest {
     }
 
     @Test
+    fun aNumberThatIsNotFiniteIsDroppedAndTheStateStillSaves() {
+        val sessions = launch()
+        sessions.observe("habit_achieved", mapOf("streak" to SessionValue.Decimal(Double.NaN), "ratio" to SessionValue.Decimal(Double.POSITIVE_INFINITY), "count" to SessionValue.Decimal(3.0)), source = SessionRules.EventSource.COMMON)
+        sessions.enterBackground()
+        sessions.flush()
+        assertEquals(mapOf<String, SessionValue>("count" to SessionValue.Decimal(3.0)), (events().last { it is SessionEvent.App } as SessionEvent.App).props)
+        assertTrue(store.stored != null)
+    }
+
+    @Test
+    fun aStoreThatThrowsDoesNotCrashTheApp() {
+        val failing = object : SessionStateStore by store {
+            var fail = true
+            override fun save(state: SessionStoredState) {
+                if (fail) throw java.io.IOException("No space left on device")
+                store.save(state)
+            }
+        }
+        val sessions = AppSessions(sink, { SessionDeviceInfo.test() }, failing, clock, ids, AppSessions.Configuration(), DirectExecutor)
+        sessions.start(SessionExitInfo.NONE)
+        sessions.screen("bookshelf")
+        sessions.enterBackground()
+        assertNull(store.stored)
+        failing.fail = false
+        sessions.enterForeground()
+        sessions.enterBackground()
+        assertTrue(store.stored != null)
+    }
+
+    @Test
     fun hangIsRecordedAndClearsTheMarker() {
         val sessions = launch()
         clock.advance(10_000)
