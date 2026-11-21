@@ -1,0 +1,6 @@
+# JitPack が公開の repo のタグから組む（com.github.appgrowstack.kotlin-app-sessions:sessions-core:<バージョン>）。
+# sessions-compose は Android の SDK が要るので、JitPack では -Psessions.withAndroid=true で組む
+jdk:
+  - openjdk21
+install:
+  - ./gradlew -Psessions.withAndroid=true :sessions-core:publishToMavenLocal :sessions-compose:publishToMavenLocal -Pversion=$VERSION
