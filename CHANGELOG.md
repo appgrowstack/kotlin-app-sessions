@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-23
+
 ### Changed
 
 - `Modifier.sessionNoCapture()` holds until its screen's lifecycle owner is destroyed, or resumed
