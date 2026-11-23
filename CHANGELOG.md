@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.1] - 2026-11-23
 
 ### Fixed
 
@@ -27,12 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `sessions-compose` no longer plans a shot on every draw while no frames are wanted (the power check still
   runs, so a pause can end), and a touch or a drag left open when the app went to the back no longer holds
   frames back after it comes to the front.
-
-## [0.3.1] - 2026-11-23
-
-### Changed
-
-- No change on Kotlin. This number keeps the pair aligned with swift-app-sessions 0.3.1 (the recording's frame-cost rule on iOS).
 
 ## [0.3.0] - 2026-11-23
 
