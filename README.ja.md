@@ -1,6 +1,6 @@
 # kotlin-app-sessions
 
-Androidアプリの中で人が何をしたかを、セッションごとに記録する。画面・タップ・rage tap・すぐ戻った操作・スクロールの深さ・止まった時間・セッションの終わり方を残す。
+Androidアプリの中で人が何をしたかを、セッションごとに記録する。画面・タップ・rage tap・dead tap・すぐ戻った操作・スクロールの深さ・止まった時間・セッションの終わり方を残し、望めば人に見せない所を黒く塗った画面の録画も撮る。
 
 [English](README.md) | 日本語
 
@@ -15,9 +15,12 @@ Androidアプリの中で人が何をしたかを、セッションごとに記�
 - **アプリの出来事は残す物を絞る。** 共通のカタログの出来事は値を残す。アプリ独自の出来事は`keepProps`に書いたプロパティだけを残す。48文字を超える文字列は捨てる
 - **再起動やオフラインでも消えない。** 送れていない物は保存し、同じ`seq`で後から送る。受ける側は重なりを捨てられる
 - **iOSのパッケージと同じ判定。** `SessionRules`は共通の表でswift-app-sessionsと同じ答えを出す
+- **最初から隠す画面の録画。** 窓を`PixelCopy`で1秒に1枚まで撮り、縮める前に黒く塗ってから1dp＝1pxにしてWebPで持つ。入力欄・パスワードの欄・`Modifier.sessionMask()`・WebView・Composeの中のViewはいつも塗る。既定では文字と画像も全部塗る（`SessionMaskMode.TEXT_AND_IMAGES`。`SessionReplayOptions`で`INPUTS`に緩められる）。塗れなかったコマは捨てる
+- **送る価値がある時だけ送る。** サーバーの答えで決める。`RECORD`は塊を全部送る。`BUFFER`は直近60秒だけを端末に残し、優先の条件（rage tapやdead tap・止まり・クラッシュ・問い合わせ・買わずに閉じたペイウォールなど）に当たったら、残した分とその後を送る。`NONE`は撮らない。塊は従量でない回線で送り、優先のセッションは従量の回線でも1日3MBまで送る
+- **端末に軽い。** 指が触れている間・リストの惰性の間・省電力・発熱・電池20%未満で充電していない時は撮らない。前と同じに見えるコマは画像を持たない。溜めるのは全体で50MB・7日まで、1つのセッションは30分か20MBまで
 - **依存が少ない。** `sessions-core`はKotlinの標準ライブラリだけ。`sessions-compose`はAndroidのSDKとComposeのuiとfoundationを足す
 
-軽い記録は画素を持たない。`Modifier.sessionMask()`と`Modifier.sessionNoCapture()`はマークを置くだけ。`Modifier.sessionNoCapture()`を付けた画面は、見えている間と、Navigation Composeでその上に別の画面を開いている間（戻って閉じるまで）、録画を撮らない。ダイアログ・`ModalBottomSheet`など窓のフォーカスを取る物が出ている間も撮らない。今撮ると撮らない理由は`SessionCapture.blankReason(window, sessions, noCaptureScreens)`で分かる。
+軽い記録は画素を持たない。録画は`AppSessions(replay = …)`を渡した時だけ撮る。`Modifier.sessionNoCapture()`を付けた画面は、見えている間と、Navigation Composeでその上に別の画面を開いている間（戻って閉じるまで）、録画を撮らない。ダイアログ・`ModalBottomSheet`など窓のフォーカスを取る物が出ている間も撮らない。今撮ると撮らない理由は`SessionCapture.blankReason(window, sessions, noCaptureScreens)`で分かる。
 
 ### 記録の送り先
 
@@ -28,6 +31,10 @@ Androidアプリの中で人が何をしたかを、セッションごとに記�
 | `FileSessionSink` | セッションごとのファイルに、バッチを1行のJSONで足す。20MBを超えたら古い物から消す。テスター向けの画面は`files()`を共有できる |
 | `DebugSessionSink` | 直近のバッチをメモリに持ち（`batches`）、1つずつ出力もする |
 | 自前の物 | `fun send(batch: SessionBatch): SessionSinkReply`。投げるとバッチを残して後で送り直す。`SessionSinkReply.Disabled`を返すとそのセッションを止める |
+
+録画の塊（`.agsr`。JSONの頭と画像を並べた物。`SessionReplaySegment`）は`<directory>/sessions/replay/<session_id>/<seq>.agsr`で待ち、`SessionReplayRecorder`の`SessionReplaySink`に渡る。`fun upload(segment: SessionReplayUpload): SessionReplayUploadReply`。`UPLOADED`か`REJECTED`を返すとその塊を消し、`FORBIDDEN`はそのセッションの塊を全部消す。投げると後で送り直す。最初の答えの`uploadToken`（`SessionSinkReply.Accepted.uploadToken`）は再起動してもセッションと一緒に残り、塊ごとに付く。`sessions.uploadToken(sessionId)`で読める。
+
+答えに`live`があると、`AppSessions(liveTransport = …)`に渡した`SessionLiveTransport`でライブを開く（このパッケージはWebSocketを持たない。OkHttpなど手元のクライアントを包んで渡す）。
 
 ### テスト
 
@@ -41,8 +48,10 @@ import com.appgrowstack.sessions.AppSessions
 import com.appgrowstack.sessions.FileSessionSink
 import com.appgrowstack.sessions.FileSessionStateStore
 import com.appgrowstack.sessions.SessionDeviceInfo
+import com.appgrowstack.sessions.SessionReplayRecorder
 import com.appgrowstack.sessions.SessionValue
 import com.appgrowstack.sessions.compose.SessionCapture
+import com.appgrowstack.sessions.compose.SessionReplayOptions
 import com.appgrowstack.sessions.compose.current
 
 class App : Application() {
@@ -53,8 +62,10 @@ class App : Application() {
             sink = FileSessionSink(noBackupFilesDir), // keep the records on the device
             deviceInfo = { SessionDeviceInfo.current(this, channel = "play") },
             store = store,
+            // optional: the recording, with where its segments go
+            replay = SessionReplayRecorder(noBackupFilesDir, sink = mySegmentSink),
         )
-        SessionCapture.install(this, sessions, store) // starts the session
+        SessionCapture.install(this, sessions, store, replayOptions = SessionReplayOptions()) // starts the session
         sessions.observe("screen_viewed", mapOf("screen" to SessionValue.Text("home")))
     }
 }
@@ -93,8 +104,8 @@ dependencies {
 
 | モジュール | 中身 |
 |---|---|
-| `sessions-core` | セッションの区切り・判定（`SessionRules`）・記録する`AppSessions`・バッチ・`SessionSink`と`FileSessionSink`と`DebugSessionSink`・`FileSessionStateStore`・`HangMonitor`・テスト用のフェイク |
-| `sessions-compose` | `SessionCapture`・`SessionDeviceInfo.current`・`Modifier.sessionTarget`・`sessionScroll`・`sessionMask`・`sessionNoCapture` |
+| `sessions-core` | セッションの区切り・判定（`SessionRules`）・記録する`AppSessions`・バッチ・`SessionSink`と`FileSessionSink`と`DebugSessionSink`・`FileSessionStateStore`・`HangMonitor`・録画の塊（`SessionReplayRecorder`・`SessionReplaySegment`・`SessionReplaySink`）・ライブの口（`SessionLiveTransport`）・テスト用のフェイク |
+| `sessions-compose` | `SessionCapture`（録画のコマと`SessionReplayOptions`）・`AndroidSessionNetwork`・`SessionDeviceInfo.current`・`Modifier.sessionTarget`・`sessionScroll`・`sessionMask`・`sessionNoCapture` |
 
 ## 動く環境
 

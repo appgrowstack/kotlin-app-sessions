@@ -8,7 +8,7 @@ import kotlin.math.min
  * The rules of the light record as pure functions: no clock, storage or network. The recorder
  * uses the same code, and `schema/cases/sessions` checks every one against Swift and TypeScript.
  * This file holds the constants and the types; the functions are extensions in `SessionRules<context>.kt`
- * (Split, Taps, Navigation, EndReason, Scroll, Props, Sampling), the same split as Swift's `SessionRules+<context>.swift`.
+ * (Split, Taps, Navigation, EndReason, Scroll, Props, Sampling, Capture, Replay), the same split as Swift's `SessionRules+<context>.swift`.
  */
 public object SessionRules {
     /** 30 minutes in the background starts a new session (30 minutes exactly included). */
@@ -22,6 +22,9 @@ public object SessionRules {
     public const val MAX_PROP_LENGTH: Int = 48
     public const val GRID_COLUMNS: Int = 40
     public const val GRID_ROWS: Int = 80
+    /** The fingerprint of a frame of the recording: the frame shrunk to 16 × 32 cells ([frameFingerprint]). */
+    public const val FINGERPRINT_COLUMNS: Int = 16
+    public const val FINGERPRINT_ROWS: Int = 32
 
     // ---- Split
 

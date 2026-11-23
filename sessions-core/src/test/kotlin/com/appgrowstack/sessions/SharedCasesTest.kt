@@ -3,31 +3,34 @@ package com.appgrowstack.sessions
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.TestFactory
 import java.io.File
+import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * Runs the light record's tables in `schema/cases/sessions` (copied by `scripts/sync-cases.sh`).
- * Swift and TypeScript read the same files. `mask_rects` and `segment` belong to the recording,
- * `aggregate` to the server.
+ * Runs the tables in `schema/cases/sessions` (copied by `scripts/sync-cases.sh`): the light record's and
+ * the recording's (`mask_rects`, `segment`). Swift and TypeScript read the same files. `aggregate`
+ * belongs to the server.
  */
 class SharedCasesTest {
     companion object {
         val directory: File = File(File(requireNotNull(SharedCasesTest::class.java.getResource("/cases")) { "run scripts/sync-cases.sh" }.toURI()), "sessions")
-        val notHere = setOf("mask_rects", "segment", "aggregate")
+        val notHere = setOf("aggregate")
         val all: List<Pair<File, Map<String, Any?>>> = directory.listFiles { f -> f.extension == "json" }!!.sortedBy { it.name }
             .map { it to SessionJson.parse(it.readText()).asMap() }
-        val light = all.filter { it.second["rule"] !in notHere }
+        val here = all.filter { it.second["rule"] !in notHere }
     }
 
     @Test
-    fun everyLightCaseIsRun() {
+    fun everyDeviceCaseIsRun() {
         assertEquals(98, all.size)
-        assertEquals(78, light.size)
+        assertEquals(91, here.size)
+        assertEquals(5, here.count { it.second["rule"] == "mask_rects" })
+        assertEquals(8, here.count { it.second["rule"] == "segment" })
     }
 
     @TestFactory
-    fun sessionCases(): List<DynamicTest> = light.map { (file, json) ->
+    fun sessionCases(): List<DynamicTest> = here.map { (file, json) ->
         DynamicTest.dynamicTest(file.nameWithoutExtension) {
             val actual = run(json["rule"] as String, json["input"].asMap())
             assertEquals(SessionJson.encode(json["expect"]), SessionJson.encode(actual), file.name)
@@ -136,6 +139,32 @@ class SharedCasesTest {
                 put("priority", s.priority.map { it.wire })
                 put("previous_session_upload", s.previousSessionUpload)
                 put("session_replay", s.sessionReplay?.wire)
+            }
+        }
+        "mask_rects" -> {
+            val image = input["image"].asMap()
+            val rects = input["rects"].asList().map { r ->
+                r?.asMap()?.let { SessionRect(it["x"].asDouble(), it["y"].asDouble(), it["w"].asDouble(), it["h"].asDouble()) }
+            }
+            val plan = SessionRules.maskRects(input["scale"].asDouble(), SessionPixelSize(image["w"].asInt(), image["h"].asInt()), rects)
+            buildMap {
+                put("drop", plan.drop)
+                plan.reason?.let { put("reason", it.value) }
+                put("rects", plan.rects.map { mapOf("x" to it.x, "y" to it.y, "w" to it.w, "h" to it.h) })
+            }
+        }
+        "segment" -> {
+            val bytes = Base64.getDecoder().decode(input["bytes"] as String)
+            try {
+                val segment = SessionReplaySegment.decode(bytes)
+                // Written again, it reads the same
+                assertEquals(segment, SessionReplaySegment.decode(segment.encode()))
+                mapOf(
+                    "header" to segment.header(),
+                    "images" to segment.frames.filterIsInstance<SessionReplayFrame.Image>().map { Base64.getEncoder().encodeToString(it.bytes) },
+                )
+            } catch (e: SessionReplaySegment.Invalid) {
+                mapOf("error" to e.error.wire)
             }
         }
         else -> error("rule $rule is not run here")

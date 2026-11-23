@@ -103,9 +103,17 @@ public data class SessionBatch(val session: SessionDevice, val seq: Int, val eve
 public sealed interface SessionSinkReply {
     /**
      * Taken. `replay` is the receiver's decision for the recording (null: no decision, stay on
-     * `BUFFER`). `keepProps` replaces the kept properties when the receiver has newer ones.
+     * `BUFFER`; `NONE` stays for the rest of the session). `keepProps` replaces the kept properties when
+     * the receiver has newer ones. `uploadToken` (the answer to the session's first batch only) is kept
+     * with the session and sent with each of its segments; it does not come again. `live`: someone is
+     * watching this device.
      */
-    public data class Accepted(val replay: SessionReplayMode? = null, val keepProps: Map<String, List<String>>? = null) : SessionSinkReply
+    public data class Accepted(
+        val replay: SessionReplayMode? = null,
+        val keepProps: Map<String, List<String>>? = null,
+        val uploadToken: String? = null,
+        val live: SessionLiveOffer? = null,
+    ) : SessionSinkReply
 
     /**
      * The receiver does not take sessions (turned off or paused). The recorder drops what it holds

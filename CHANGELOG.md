@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The recording. `SessionReplayRecorder` (pass it as `AppSessions(replay = …)`) builds segments from the
+  frames and keeps them in `<directory>/sessions/replay/<session_id>/<seq>.agsr`: a segment closes at 60
+  seconds, 900 KB of images or 600 frames; the folder keeps 50 MB and 7 days, a session 30 minutes or 20 MB.
+  `AppSessions` sends them to its `SessionReplaySink` by the answer's mode: `RECORD` all, `BUFFER` the last
+  60 seconds and what follows once a priority condition is met (or the session crashed, hung or was killed),
+  `NONE` none. Unmetered networks only, a priority session's also metered up to 3 MB a day
+  (`AppSessions.network`, `SessionNetwork`). `UPLOADED` and `REJECTED` remove the segment, `FORBIDDEN` the
+  session's; a throw keeps it.
+- `SessionReplaySegment` writes and reads the `.agsr` segment (and passes `cases/sessions/segment-*`).
+  `SessionReplayFrame` (`Image`, `Same`, `Blank`).
+- `SessionRules.maskRects(scale, image, rects)` (passes `cases/sessions/mask-rects-*`),
+  `SessionRules.frameFingerprint(luma)` and `SessionRules.luma(argb)`.
+- `AppSessions.replayImage`, `replayBlank`, `replayPaused`, `replayActive`, `replayStopped`,
+  `replayFrameIntervalMs` and `uploadToken(sessionId)`. `isCapturing` is true while frames come, so dead taps
+  are recorded (`dead`). Each batch carries `replay_stats` (`SessionEvent.ReplayStats`) when frames were taken
+  or the recording stopped (`SessionReplayStopReason`).
+- `SessionSinkReply.Accepted.uploadToken` (kept with the session across launches) and `live`
+  (`SessionLiveOffer`). `SessionReplayMode.NONE` (stays to the end of the session) and `SessionMaskMode`.
+- The live view: `AppSessions(liveTransport = …)` with `SessionLiveTransport`, `SessionLiveConnection` and
+  `SessionLiveListener` (hello, events at once, frames up to 2 a second, `stop` and `rate`; closed in the
+  back; a batch every 5 seconds while open). The package has no WebSocket of its own.
+- `sessions-compose`: `SessionCapture.install(…, replayOptions = SessionReplayOptions(mask, noCaptureScreens))`
+  takes the frames with `PixelCopy` (painted over before they are shrunk to 1 dp = 1 px, WebP quality 35) and
+  sets `AndroidSessionNetwork`. The module declares `ACCESS_NETWORK_STATE`.
+- Test doubles `RecordingSessionReplaySink` and `RecordingLiveTransport`.
+
+### Changed
+
+- `Modifier.sessionMask()` is painted in every frame of the recording.
+
 ## [0.2.0] - 2026-11-23
 
 ### Changed

@@ -68,7 +68,7 @@ private fun Modifier.sessionMark(kind: SessionMarks.Kind): Modifier = composed {
 /** Names this element in the taps on it (`tap.target`). `name` is lowercase letters, digits and `_`. */
 public fun Modifier.sessionTarget(name: String): Modifier = sessionMark(SessionMarks.Kind.Target(name))
 
-/** Hides this element from the session recording. The light record keeps no pixels; the mark is placed now so the recording finds it. */
+/** Hides this element from the session recording: its place is painted black in every frame. */
 public fun Modifier.sessionMask(): Modifier = sessionMark(SessionMarks.Kind.Mask)
 
 /**

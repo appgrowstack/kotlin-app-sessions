@@ -1,6 +1,6 @@
 # kotlin-app-sessions
 
-Records what people do inside an Android app, one session at a time: screens, taps, rage taps, quick backs, scroll depth, hangs and how each session ended.
+Records what people do inside an Android app, one session at a time: screens, taps, rage taps, dead taps, quick backs, scroll depth, hangs and how each session ended, and, when you want it, a recording of the screen with private parts painted over.
 
 English | [Japanese](README.ja.md)
 
@@ -15,9 +15,12 @@ English | [Japanese](README.ja.md)
 - **Your app's events, kept carefully.** Events of the shared catalog keep their values; your own events keep only the properties you list in `keepProps`. Text longer than 48 characters is dropped
 - **Survives restarts and no network.** What is not sent yet is kept and sent later with the same `seq`, so the receiver can drop duplicates
 - **Same rules as the iOS package.** `SessionRules` gives the same answers as swift-app-sessions on the shared tables
+- **A screen recording that hides by default.** `PixelCopy` of the window at most once a second, painted black before it is shrunk to 1 dp = 1 px and kept as WebP. Text fields, password fields, `Modifier.sessionMask()`, web views and views inside Compose are always painted; by default every text and image too (`SessionMaskMode.TEXT_AND_IMAGES`, loosened to `INPUTS` with `SessionReplayOptions`). A frame that cannot be painted is dropped
+- **Sent only when it is worth it.** The server's answer decides: `RECORD` sends every segment, `BUFFER` keeps the last 60 seconds on the device and sends them, and what follows, once a session meets a priority condition (rage or dead taps, a hang, a crash, a ticket, a paywall closed without buying…), `NONE` takes nothing. Segments go on an unmetered network, a priority session's also on a metered one up to 3 MB a day
+- **Light on the device.** No frames while a finger is down, while a list still scrolls, in battery saver, when hot, or under 20% and not charging. A frame that looks like the last one keeps no image. The folder keeps 50 MB and 7 days at most, a session 30 minutes or 20 MB
 - **Few dependencies.** `sessions-core` uses Kotlin's standard library only; `sessions-compose` adds the Android SDK and Compose ui and foundation
 
-The light record keeps no pixels. `Modifier.sessionMask()` and `Modifier.sessionNoCapture()` only place marks. A screen marked `Modifier.sessionNoCapture()` keeps the recording blank while it is shown and while it lies under the shown screen (a screen pushed on it with Navigation Compose), until it is popped. While a dialog, a `ModalBottomSheet` or anything else takes the window's focus, the recording is blank too. `SessionCapture.blankReason(window, sessions, noCaptureScreens)` gives the reason a frame taken now would be blank.
+The light record keeps no pixels; the recording does only with `AppSessions(replay = …)`. A screen marked `Modifier.sessionNoCapture()` keeps the recording blank while it is shown and while it lies under the shown screen (a screen pushed on it with Navigation Compose), until it is popped. While a dialog, a `ModalBottomSheet` or anything else takes the window's focus, the recording is blank too. `SessionCapture.blankReason(window, sessions, noCaptureScreens)` gives the reason a frame taken now would be blank.
 
 ### Where the records go
 
@@ -28,6 +31,10 @@ The light record keeps no pixels. `Modifier.sessionMask()` and `Modifier.session
 | `FileSessionSink` | One JSON line per batch in a file per session, oldest removed past 20 MB. `files()` for a tester screen to share |
 | `DebugSessionSink` | The last batches in memory (`batches`), each also printed |
 | your own | `fun send(batch: SessionBatch): SessionSinkReply`. Throw to keep the batch for later; answer `SessionSinkReply.Disabled` to stop the session |
+
+The recording's segments (`.agsr`: a JSON header and the images, `SessionReplaySegment`) wait in `<directory>/sessions/replay/<session_id>/<seq>.agsr` and go to the `SessionReplaySink` of `SessionReplayRecorder`: `fun upload(segment: SessionReplayUpload): SessionReplayUploadReply`. Answer `UPLOADED` or `REJECTED` to remove the segment, `FORBIDDEN` to remove the session's, or throw to send it again later. The `uploadToken` the first answer carried (`SessionSinkReply.Accepted.uploadToken`) is kept with the session across launches and goes with each segment; `sessions.uploadToken(sessionId)` reads it.
+
+A live view opens when an answer carries `live`, through the `SessionLiveTransport` you pass as `AppSessions(liveTransport = …)` (the package has no WebSocket of its own; wrap your client, OkHttp's for one).
 
 ### Testing
 
@@ -41,8 +48,10 @@ import com.appgrowstack.sessions.AppSessions
 import com.appgrowstack.sessions.FileSessionSink
 import com.appgrowstack.sessions.FileSessionStateStore
 import com.appgrowstack.sessions.SessionDeviceInfo
+import com.appgrowstack.sessions.SessionReplayRecorder
 import com.appgrowstack.sessions.SessionValue
 import com.appgrowstack.sessions.compose.SessionCapture
+import com.appgrowstack.sessions.compose.SessionReplayOptions
 import com.appgrowstack.sessions.compose.current
 
 class App : Application() {
@@ -53,8 +62,10 @@ class App : Application() {
             sink = FileSessionSink(noBackupFilesDir), // keep the records on the device
             deviceInfo = { SessionDeviceInfo.current(this, channel = "play") },
             store = store,
+            // optional: the recording, with where its segments go
+            replay = SessionReplayRecorder(noBackupFilesDir, sink = mySegmentSink),
         )
-        SessionCapture.install(this, sessions, store) // starts the session
+        SessionCapture.install(this, sessions, store, replayOptions = SessionReplayOptions()) // starts the session
         sessions.observe("screen_viewed", mapOf("screen" to SessionValue.Text("home")))
     }
 }
@@ -93,8 +104,8 @@ dependencies {
 
 | Module | What it has |
 |---|---|
-| `sessions-core` | Splitting sessions, the rules (`SessionRules`), the recorder `AppSessions`, batches, `SessionSink` with `FileSessionSink` and `DebugSessionSink`, `FileSessionStateStore`, `HangMonitor` and test doubles |
-| `sessions-compose` | `SessionCapture`, `SessionDeviceInfo.current`, `Modifier.sessionTarget`, `sessionScroll`, `sessionMask` and `sessionNoCapture` |
+| `sessions-core` | Splitting sessions, the rules (`SessionRules`), the recorder `AppSessions`, batches, `SessionSink` with `FileSessionSink` and `DebugSessionSink`, `FileSessionStateStore`, `HangMonitor`, the recording's segments (`SessionReplayRecorder`, `SessionReplaySegment`, `SessionReplaySink`), the live view's port (`SessionLiveTransport`) and test doubles |
+| `sessions-compose` | `SessionCapture` (with the recording's frames and `SessionReplayOptions`), `AndroidSessionNetwork`, `SessionDeviceInfo.current`, `Modifier.sessionTarget`, `sessionScroll`, `sessionMask` and `sessionNoCapture` |
 
 ## Requirements
 

@@ -90,9 +90,56 @@ public enum class SessionMarkKind(public val wire: String) {
     }
 }
 
-/** Where the sink's answer says to take the session's recording. Without an answer, `BUFFER`. */
+/**
+ * Where the sink's answer says to take the session's recording. Without an answer, `BUFFER`.
+ * - `RECORD`: every segment is sent
+ * - `BUFFER`: only the last 60 seconds are kept on the device; when a priority condition is met
+ *   ([SessionRules.priorityHits]) they are sent, and so is what follows
+ * - `NONE`: the policy turned the recording off (`replay.enabled` false). No frames are taken
+ */
 public enum class SessionReplayMode(public val wire: String) {
-    RECORD("record"), BUFFER("buffer");
+    RECORD("record"), BUFFER("buffer"), NONE("none");
+
+    public companion object {
+        public fun of(wire: String): SessionReplayMode = entries.first { it.wire == wire }
+    }
+}
+
+/** Why the recording stopped (`ReplayStopReason` of `sessions/batch.schema.json`). */
+public enum class SessionReplayStopReason(public val wire: String) {
+    /** Battery saver is on. */
+    LOW_POWER("low_power"),
+    /** The device is hot (Android's thermal status `SEVERE` or worse). */
+    THERMAL("thermal"),
+    /** Under 20% and not charging. */
+    BATTERY("battery"),
+    /** Taking frames weighs on the main thread (p95 over 33 ms). Stops for the rest of the session. */
+    DEGRADED("degraded"),
+    /** The session reached 30 minutes or 20 MB of recording. Stops for the rest of the session. */
+    SESSION_LIMIT("session_limit"),
+    /** The policy turned the recording off. */
+    DISABLED("disabled"),
+    /** The segments kept on the device reached their limit. */
+    STORAGE("storage");
+
+    public companion object {
+        public fun of(wire: String): SessionReplayStopReason = entries.first { it.wire == wire }
+    }
+}
+
+/**
+ * What the recording paints over (`SessionMaskMode` of the manifest). Text fields, password fields,
+ * `Modifier.sessionMask()`, web views and views inside Compose are painted in both.
+ */
+public enum class SessionMaskMode(public val wire: String) {
+    /** Text fields and the marked elements only. */
+    INPUTS("inputs"),
+    /** Every text and image too. The default. */
+    TEXT_AND_IMAGES("text_and_images");
+
+    public companion object {
+        public fun of(wire: String): SessionMaskMode = entries.first { it.wire == wire }
+    }
 }
 
 /** A size in dp (points on iOS). */
@@ -158,6 +205,22 @@ public sealed interface SessionEvent {
     public data class End(override val t: Long, val reason: SessionEndReason) : SessionEvent {
         override val kind: String get() = "end"
     }
+    /**
+     * The recording since the previous batch: frames with an image (`captured`), frames without one
+     * by why (`dropped`), the main thread's time per frame and why it stopped, if it did.
+     */
+    public data class ReplayStats(
+        override val t: Long,
+        val captured: Int,
+        val dropped: Dropped,
+        val mainMsP50: Double,
+        val mainMsP95: Double,
+        val stopped: SessionReplayStopReason? = null,
+    ) : SessionEvent {
+        override val kind: String get() = "replay_stats"
+
+        public data class Dropped(val same: Int = 0, val maskingFailed: Int = 0, val noCapture: Int = 0, val secure: Int = 0)
+    }
 
     /** The event as the batch schema's JSON object. */
     public fun toJson(): Map<String, Any?> {
@@ -185,6 +248,16 @@ public sealed interface SessionEvent {
             is Hang -> out["ms"] = ms
             is Background, is Foreground -> Unit
             is End -> out["reason"] = reason.wire
+            is ReplayStats -> {
+                out["captured"] = captured
+                out["dropped"] = mapOf(
+                    "same" to dropped.same, "masking_failed" to dropped.maskingFailed,
+                    "no_capture" to dropped.noCapture, "secure" to dropped.secure,
+                )
+                out["main_ms_p50"] = mainMsP50
+                out["main_ms_p95"] = mainMsP95
+                stopped?.let { out["stopped"] = it.wire }
+            }
         }
         return out
     }
@@ -213,6 +286,14 @@ public sealed interface SessionEvent {
                 "background" -> Background(t)
                 "foreground" -> Foreground(t)
                 "end" -> End(t, SessionEndReason.of(s("reason")))
+                "replay_stats" -> {
+                    val d = json["dropped"].asMap()
+                    ReplayStats(
+                        t, json["captured"].asInt(),
+                        ReplayStats.Dropped(d["same"].asInt(), d["masking_failed"].asInt(), d["no_capture"].asInt(), d["secure"].asInt()),
+                        json["main_ms_p50"].asDouble(), json["main_ms_p95"].asDouble(), so("stopped")?.let(SessionReplayStopReason::of),
+                    )
+                }
                 else -> throw IllegalArgumentException("unknown session event k: $k")
             }
         }

@@ -34,7 +34,9 @@ import kotlin.math.hypot
  * Feeds an [AppSessions] from Android: the app going to the back and the front (by its started
  * activities), taps on every activity's window, the back key, how the previous process ended
  * (`ApplicationExitInfo` from API 30, the SDK's crash handler before it) and hangs of the main
- * thread. Every touch and key goes on to the app unchanged.
+ * thread. Every touch and key goes on to the app unchanged. When the recorder has a recording
+ * (`AppSessions(replay = …)`), it also takes the recording's frames of the activity in the front
+ * (`PixelCopy`, painted over as `replayOptions` says) and reads the network with [AndroidSessionNetwork].
  *
  * ```kotlin
  * class App : Application() {
@@ -51,7 +53,13 @@ public object SessionCapture {
     private val main = Handler(Looper.getMainLooper())
 
     /** `store` must be the store the recorder uses (the hang monitor marks a hang in it). */
-    public fun install(application: Application, sessions: AppSessions, store: SessionStateStore, watchHangs: Boolean = true) {
+    public fun install(
+        application: Application,
+        sessions: AppSessions,
+        store: SessionStateStore,
+        watchHangs: Boolean = true,
+        replayOptions: SessionReplayOptions = SessionReplayOptions(),
+    ) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             val previous = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, error ->
@@ -59,8 +67,12 @@ public object SessionCapture {
                 previous?.uncaughtException(thread, error)
             }
         }
+        val replay = sessions.replay?.let {
+            sessions.network = AndroidSessionNetwork(application)
+            SessionReplayCapture(application, sessions, replayOptions)
+        }
         sessions.start(exitInfo(application))
-        application.registerActivityLifecycleCallbacks(Lifecycle(sessions))
+        application.registerActivityLifecycleCallbacks(Lifecycle(sessions, replay))
         val tick = object : Runnable {
             override fun run() {
                 sessions.tick()
@@ -110,13 +122,14 @@ public object SessionCapture {
         else -> "REASON_UNKNOWN"
     }
 
-    private class Lifecycle(private val sessions: AppSessions) : Application.ActivityLifecycleCallbacks {
+    private class Lifecycle(private val sessions: AppSessions, private val replay: SessionReplayCapture?) : Application.ActivityLifecycleCallbacks {
         private var started = 0
 
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = attach(activity)
         override fun onActivityResumed(activity: Activity) {
             attach(activity)
             updateWindow(activity)
+            activity.window?.let { window -> runCatching { replay?.attach(window) } }
         }
 
         override fun onActivityStarted(activity: Activity) {
@@ -129,14 +142,16 @@ public object SessionCapture {
             if (started == 0 && !activity.isChangingConfigurations) sessions.enterBackground()
         }
 
-        override fun onActivityPaused(activity: Activity) = Unit
+        override fun onActivityPaused(activity: Activity) {
+            activity.window?.let { window -> runCatching { replay?.detach(window) } }
+        }
         override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
         override fun onActivityDestroyed(activity: Activity) = Unit
 
         private fun attach(activity: Activity) {
             val window = activity.window ?: return
             val callback = window.callback ?: return
-            if (callback !is SessionWindowCallback) window.callback = SessionWindowCallback(callback, window, sessions)
+            if (callback !is SessionWindowCallback) window.callback = SessionWindowCallback(callback, window, sessions, replay)
         }
 
         private fun updateWindow(activity: Activity) {
@@ -160,6 +175,7 @@ internal class SessionWindowCallback(
     private val delegate: Window.Callback,
     private val window: Window,
     private val sessions: AppSessions,
+    private val replay: SessionReplayCapture? = null,
 ) : Window.Callback by delegate {
     private var downX = 0f
     private var downY = 0f
@@ -167,11 +183,24 @@ internal class SessionWindowCallback(
     override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
         if (event != null) {
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { downX = event.x; downY = event.y }
-                MotionEvent.ACTION_UP -> runCatching { report(event) }
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.x
+                    downY = event.y
+                    runCatching { replay?.touchDown() }
+                }
+                MotionEvent.ACTION_UP -> {
+                    runCatching { report(event) }
+                    runCatching { replay?.touchUp(dragged = dragged(event)) }
+                }
+                MotionEvent.ACTION_CANCEL -> runCatching { replay?.touchUp(dragged = true) }
             }
         }
         return delegate.dispatchTouchEvent(event)
+    }
+
+    private fun dragged(event: MotionEvent): Boolean {
+        val density = window.decorView.resources.displayMetrics.density
+        return hypot(event.x - downX, event.y - downY) / density >= 10
     }
 
     override fun dispatchKeyEvent(event: KeyEvent?): Boolean {
@@ -184,7 +213,7 @@ internal class SessionWindowCallback(
     private fun report(event: MotionEvent) {
         val density = window.decorView.resources.displayMetrics.density
         // A drag is a scroll, not a tap.
-        if (hypot(event.x - downX, event.y - downY) / density >= 10) return
+        if (dragged(event)) return
         val frame = SessionCapture.windowFrame(window) ?: return
         val target = SessionMarks.target(window, event.x, event.y)
         sessions.tap(frame.x + event.x / density, frame.y + event.y / density, frame, target)

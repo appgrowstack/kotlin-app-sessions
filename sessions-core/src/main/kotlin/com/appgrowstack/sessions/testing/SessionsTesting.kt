@@ -5,6 +5,14 @@ import com.appgrowstack.sessions.SessionClock
 import com.appgrowstack.sessions.SessionDeviceInfo
 import com.appgrowstack.sessions.SessionEvent
 import com.appgrowstack.sessions.SessionIdGenerator
+import com.appgrowstack.sessions.SessionLiveConnection
+import com.appgrowstack.sessions.SessionLiveListener
+import com.appgrowstack.sessions.SessionLiveOffer
+import com.appgrowstack.sessions.SessionLiveTransport
+import com.appgrowstack.sessions.SessionReplaySegment
+import com.appgrowstack.sessions.SessionReplaySink
+import com.appgrowstack.sessions.SessionReplayUpload
+import com.appgrowstack.sessions.SessionReplayUploadReply
 import com.appgrowstack.sessions.SessionPlatform
 import com.appgrowstack.sessions.SessionScreen
 import com.appgrowstack.sessions.SessionSink
@@ -60,6 +68,56 @@ public class RecordingSessionSink : SessionSink {
 
     /** Every event sent, in order, with the session it belongs to. */
     public val events: List<Pair<String, SessionEvent>> get() = batches.flatMap { b -> b.events.map { b.session.sessionId to it } }
+}
+
+/**
+ * Keeps every segment it is given and answers from a queue (with nothing queued, `UPLOADED`).
+ * `failing` throws like a device offline or a busy server.
+ */
+public class RecordingSessionReplaySink : SessionReplaySink {
+    public val uploads: MutableList<SessionReplayUpload> = CopyOnWriteArrayList()
+    private val replies = ConcurrentLinkedQueue<SessionReplayUploadReply>()
+    @Volatile public var failing: Boolean = false
+
+    public fun enqueue(reply: SessionReplayUploadReply) { replies.add(reply) }
+
+    override fun upload(segment: SessionReplayUpload): SessionReplayUploadReply {
+        if (failing) throw IllegalStateException("offline")
+        uploads.add(segment)
+        return replies.poll() ?: SessionReplayUploadReply.UPLOADED
+    }
+
+    /** The segments sent, read back. */
+    public val segments: List<SessionReplaySegment> get() = uploads.map { SessionReplaySegment.decode(it.bytes) }
+}
+
+/** A live transport that opens at once (or when [connect] is called) and keeps what is sent. */
+public class RecordingLiveTransport(private val openAtOnce: Boolean = true) : SessionLiveTransport {
+    public val texts: MutableList<String> = CopyOnWriteArrayList()
+    public val binaries: MutableList<ByteArray> = CopyOnWriteArrayList()
+    public val offers: MutableList<SessionLiveOffer> = CopyOnWriteArrayList()
+    @Volatile public var listener: SessionLiveListener? = null
+        private set
+    @Volatile public var closed: Boolean = false
+        private set
+
+    override fun open(offer: SessionLiveOffer, listener: SessionLiveListener): SessionLiveConnection {
+        offers.add(offer)
+        this.listener = listener
+        closed = false
+        if (openAtOnce) listener.opened()
+        return object : SessionLiveConnection {
+            override fun sendText(text: String): Boolean { texts.add(text); return true }
+            override fun sendBinary(bytes: ByteArray): Boolean { binaries.add(bytes); return true }
+            override fun close() { closed = true }
+        }
+    }
+
+    /** The connection opens now. */
+    public fun connect() { listener?.opened() }
+
+    /** The server sends `text`. */
+    public fun receive(text: String) { listener?.message(text) }
 }
 
 /** Runs the sending on the calling thread. */
