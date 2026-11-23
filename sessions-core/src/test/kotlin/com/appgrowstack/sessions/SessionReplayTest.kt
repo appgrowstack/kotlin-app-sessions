@@ -13,6 +13,7 @@ import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -417,6 +418,16 @@ class SessionReplayTest {
         assertEquals(SessionReplayRecord(s1, stored.open!!.device.startedAt, "install-0001", SessionReplayMode.RECORD, false, token, true), stored.replays.single())
         assertTrue(stored.open!!.priorityEvents.any { it is SessionEvent.Rage })
         assertEquals(stored, SessionStoredState.fromJson(SessionJson.parse(SessionJson.encode(stored.toJson())).asMap()))
+    }
+
+    // ---- Masking
+
+    @Test
+    fun theOnlyMaskModeIsMarked() {
+        assertEquals(SessionMaskMode.MARKED, SessionMaskMode.of("marked"))
+        assertEquals(listOf(SessionMaskMode.MARKED), SessionMaskMode.entries.toList())
+        assertFailsWith<NoSuchElementException> { SessionMaskMode.of("inputs") }
+        assertFailsWith<NoSuchElementException> { SessionMaskMode.of("text_and_images") }
     }
 
     // ---- Live

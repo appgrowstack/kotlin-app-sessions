@@ -26,12 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   are recorded (`dead`). Each batch carries `replay_stats` (`SessionEvent.ReplayStats`) when frames were taken
   or the recording stopped (`SessionReplayStopReason`).
 - `SessionSinkReply.Accepted.uploadToken` (kept with the session across launches) and `live`
-  (`SessionLiveOffer`). `SessionReplayMode.NONE` (stays to the end of the session) and `SessionMaskMode`.
+  (`SessionLiveOffer`). `SessionReplayMode.NONE` (stays to the end of the session) and `SessionMaskMode`
+  with `MARKED` only: the recording paints only `Modifier.sessionMask()` and password fields; everything
+  else is shown.
 - The live view: `AppSessions(liveTransport = …)` with `SessionLiveTransport`, `SessionLiveConnection` and
   `SessionLiveListener` (hello, events at once, frames up to 2 a second, `stop` and `rate`; closed in the
   back; a batch every 5 seconds while open). The package has no WebSocket of its own.
 - `sessions-compose`: `SessionCapture.install(…, replayOptions = SessionReplayOptions(mask, noCaptureScreens))`
-  takes the frames with `PixelCopy` (painted over before they are shrunk to 1 dp = 1 px, WebP quality 35) and
+  takes the frames with `PixelCopy` (`Modifier.sessionMask()`, password fields, surface and texture views
+  painted over before they are shrunk to 1 dp = 1 px, WebP quality 35; `mask` defaults to `MARKED`) and
   sets `AndroidSessionNetwork`. The module declares `ACCESS_NETWORK_STATE`.
 - Test doubles `RecordingSessionReplaySink` and `RecordingLiveTransport`.
 

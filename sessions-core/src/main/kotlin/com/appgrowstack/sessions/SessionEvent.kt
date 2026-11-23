@@ -128,14 +128,12 @@ public enum class SessionReplayStopReason(public val wire: String) {
 }
 
 /**
- * What the recording paints over (`SessionMaskMode` of the manifest). Text fields, password fields,
- * `Modifier.sessionMask()`, web views and views inside Compose are painted in both.
+ * What the recording paints over (`SessionMaskMode` of the manifest): only `Modifier.sessionMask()` and
+ * password fields; everything else is shown.
  */
 public enum class SessionMaskMode(public val wire: String) {
-    /** Text fields and the marked elements only. */
-    INPUTS("inputs"),
-    /** Every text and image too. The default. */
-    TEXT_AND_IMAGES("text_and_images");
+    /** Only `Modifier.sessionMask()` and password fields. */
+    MARKED("marked");
 
     public companion object {
         public fun of(wire: String): SessionMaskMode = entries.first { it.wire == wire }

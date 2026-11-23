@@ -35,13 +35,13 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * How the recording takes frames. `mask` is the manifest's `mask`: `TEXT_AND_IMAGES` (the default) paints
- * every text and image too; `INPUTS` only the text fields, password fields, `Modifier.sessionMask()`, web
- * views and views inside Compose, which are always painted. `noCaptureScreens` is the manifest's
- * `no_capture_screens`.
+ * How the recording takes frames. `mask` is the manifest's `mask`: `MARKED` (the default, and the only
+ * mode) paints only `Modifier.sessionMask()` and password fields; everything else is shown. Surface and
+ * texture views are painted whole (`PixelCopy` cannot see into them reliably). `noCaptureScreens` is the
+ * manifest's `no_capture_screens`.
  */
 public data class SessionReplayOptions(
-    val mask: SessionMaskMode = SessionMaskMode.TEXT_AND_IMAGES,
+    val mask: SessionMaskMode = SessionMaskMode.MARKED,
     val noCaptureScreens: Set<String> = emptySet(),
 )
 
