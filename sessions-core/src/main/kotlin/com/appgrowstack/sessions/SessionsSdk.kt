@@ -10,5 +10,5 @@ public object SessionsSdk {
     public const val NAME: String = "kotlin-app-sessions"
 
     /** The released version. Must equal `version` in gradle.properties (SessionsSdkTest checks it). */
-    public const val VERSION: String = "0.2.0"
+    public const val VERSION: String = "0.3.0"
 }
