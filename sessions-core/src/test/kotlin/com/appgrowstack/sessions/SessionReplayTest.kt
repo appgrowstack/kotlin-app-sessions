@@ -415,7 +415,7 @@ class SessionReplayTest {
         val sessions = launch(SessionSinkReply.Accepted(SessionReplayMode.RECORD, uploadToken = token))
         rage(sessions)
         val stored = store.stored!!
-        assertEquals(SessionReplayRecord(s1, stored.open!!.device.startedAt, "install-0001", SessionReplayMode.RECORD, false, token, true), stored.replays.single())
+        assertEquals(SessionReplayRecord(s1, stored.open!!.device.startedAt, "install-0001", SessionReplayMode.RECORD, true, token, true), stored.replays.single())
         assertTrue(stored.open!!.priorityEvents.any { it is SessionEvent.Rage })
         assertEquals(stored, SessionStoredState.fromJson(SessionJson.parse(SessionJson.encode(stored.toJson())).asMap()))
     }

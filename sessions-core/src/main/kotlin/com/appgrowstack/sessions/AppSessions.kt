@@ -819,7 +819,7 @@ public class AppSessions(
     private fun checkPriority() {
         val open = state.open ?: return
         val record = replayRecord(open.device.sessionId) ?: return
-        if (record.priority || record.mode != SessionReplayMode.BUFFER) return
+        if (record.priority || record.mode == SessionReplayMode.NONE) return
         if (SessionRules.priorityHits(open.priorityEvents).isEmpty()) return
         updateReplay(record.sessionId) { it.copy(priority = true) }
         segmentWaiting = true
