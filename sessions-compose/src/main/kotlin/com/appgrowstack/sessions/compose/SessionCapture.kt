@@ -69,6 +69,8 @@ public object SessionCapture {
         }
         val replay = sessions.replay?.let {
             sessions.network = AndroidSessionNetwork(application)
+            // An emulator's frame times say nothing of a device's: there heavy frames only space frames out
+            sessions.replayStopsOnSlowFrames = !AndroidEmulator.current
             SessionReplayCapture(application, sessions, replayOptions)
         }
         sessions.start(exitInfo(application))
@@ -134,7 +136,10 @@ public object SessionCapture {
 
         override fun onActivityStarted(activity: Activity) {
             started++
-            if (started == 1) sessions.enterForeground()
+            if (started == 1) {
+                runCatching { replay?.enterForeground() }
+                sessions.enterForeground()
+            }
         }
 
         override fun onActivityStopped(activity: Activity) {

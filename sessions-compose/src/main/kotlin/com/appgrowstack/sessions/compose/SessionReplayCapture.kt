@@ -67,7 +67,8 @@ public class AndroidSessionNetwork(context: Context) : SessionNetwork {
  * Takes the recording's frames of the activity in the front (sessions.md 3.2): `PixelCopy` of its window
  * on a thread of its own, painted black where [SessionMaskFinder] says before it is shrunk to 1 dp = 1 px,
  * then WebP (lossy, quality 35). At most one a second (two while watched live, one every two when frames
- * weigh); first 0.3 seconds after a screen is entered and 0.5 seconds after a tap; not while a finger is down
+ * weigh: p95 over 16 ms, the first 3 not counted; over 33 ms the session's recording stops, but not on an
+ * emulator, [AndroidEmulator]); first 0.3 seconds after a screen is entered and 0.5 seconds after a tap; not while a finger is down
  * and not until the screen has stopped moving for 0.2 seconds after a drag. Not in battery saver, when the
  * device is hot or under 20% and not charging. A frame that cannot be painted is blank (`masking_failed`).
  */
@@ -122,6 +123,15 @@ internal class SessionReplayCapture(context: Context, private val sessions: AppS
         }
     }
 
+    /**
+     * The app came back to the front. A finger that went up while in the back (the window was not told)
+     * must not hold frames back, nor a drag that was settling.
+     */
+    fun enterForeground() {
+        touching = false
+        settling = false
+    }
+
     private fun detach() {
         val current = window ?: return
         drawListener?.let { listener ->
@@ -135,6 +145,15 @@ internal class SessionReplayCapture(context: Context, private val sessions: AppS
 
     /** Something was drawn: a new screen goes first, a moving one waits until it stops, anything else within the interval. */
     private fun drawn() {
+        // Nothing to take (no recording, `NONE`, stopped for the session, the device resting): do not plan
+        // shots on every draw. The power check still runs (at most every 10 seconds) so a pause can end.
+        if (!sessions.replayActive) {
+            sessions.replayPaused(power.reason())
+            if (!sessions.replayActive) {
+                settling = false
+                return
+            }
+        }
         val screen = sessions.currentScreen
         if (screen != lastScreen) {
             lastScreen = screen

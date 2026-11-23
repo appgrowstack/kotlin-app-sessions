@@ -80,12 +80,21 @@ public class AppSessions(
     private val deadCandidates = mutableListOf<DeadCandidate>()
     private val afterTaps = mutableListOf<SessionRules.After>()
     private var counts = ReplayCounts()
-    private val recentMainMs = ArrayDeque<Double>()
+    private val frameCost = SessionReplayFrameCost()
     private var stoppedForSession: SessionReplayStopReason? = null
     private var paused: SessionReplayStopReason? = null
     private var stoppedToReport: SessionReplayStopReason? = null
     private var segmentWaiting = false
     private var live: SessionLiveLink? = null
+
+    /**
+     * Whether frames that hold the main thread over 33 ms (p95) stop the session's recording (`DEGRADED`).
+     * `sessions-compose` sets it false on an emulator, whose times say nothing of a device's; there frames
+     * are only spaced out (one every 2 seconds over 16 ms).
+     */
+    public var replayStopsOnSlowFrames: Boolean
+        get() = synchronized(lock) { frameCost.stopP95Ms != null }
+        set(value) = synchronized(lock) { frameCost.stopP95Ms = if (value) STOP_P95_MS else null }
 
     /** Where the device is: an unmetered network sends every segment. `sessions-compose` sets Android's. */
     @Volatile public var network: SessionNetwork = SessionNetwork.UNMETERED
@@ -116,14 +125,16 @@ public class AppSessions(
     /** Why the recording is stopped now (for the session, or while the device is low on power), or null. */
     public val replayStopped: SessionReplayStopReason? get() = synchronized(lock) { stoppedForSession ?: paused }
 
-    /** The shortest time between two frames now: 1 second, 2 when taking them weighs (p95 over 16 ms), 0.5 while someone watches live. */
+    /**
+     * The shortest time between two frames now: 1 second, 2 when taking them weighs (p95 over 16 ms, the
+     * first 3 frames of a session not counted: [SessionReplayFrameCost]), 0.5 while someone watches live.
+     */
     public val replayFrameIntervalMs: Long
         get() = synchronized(lock) {
             val link = live
             when {
                 link != null && link.open -> minOf(1000L, link.frameIntervalMs)
-                percentile(recentMainMs.toList(), 0.95) > 16 -> 2000
-                else -> 1000
+                else -> frameCost.intervalMs(live = false)
             }
         }
 
@@ -611,7 +622,7 @@ public class AppSessions(
         deadCandidates.clear()
         afterTaps.clear()
         counts = ReplayCounts()
-        recentMainMs.clear()
+        frameCost.reset()
         stoppedForSession = null
         stoppedToReport = null
         replay?.let {
@@ -782,9 +793,7 @@ public class AppSessions(
         }
         if (mainMs > 0 && mainMs.isFinite()) {
             if (counts.mainMs.size < 2000) counts.mainMs.add(mainMs)
-            recentMainMs.addLast(mainMs)
-            while (recentMainMs.size > 30) recentMainMs.removeFirst()
-            if (recentMainMs.size >= 10 && percentile(recentMainMs.toList(), 0.95) > 33) {
+            if (frameCost.add(mainMs) == SessionReplayFrameCost.Verdict.DEGRADED) {
                 stopReplay(SessionReplayStopReason.DEGRADED)
                 return false
             }
@@ -895,6 +904,9 @@ public class AppSessions(
             is SessionEvent.App -> event.name == "paywall_closed"
             else -> false
         }
+
+        /** p95 over this stops the session's recording, on a device ([replayStopsOnSlowFrames]). */
+        private const val STOP_P95_MS = 33.0
 
         /** The `p` quantile (nearest rank) of `values`, 0 for none. */
         private fun percentile(values: List<Double>, p: Double): Double {

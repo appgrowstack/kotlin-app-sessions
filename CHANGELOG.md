@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- The recording could stop for the rest of the session shortly after launch, on an emulator above all: the
+  frames' main-thread time went over 33 ms (p95) while the app was still laying out its first screens, and
+  `DEGRADED` is kept for the session. The first 3 frames of a session are no longer counted, and on an
+  emulator (`Build.FINGERPRINT`, `Build.HARDWARE` and the like) a slow frame only spaces frames out. On a
+  device, 33 ms still stops the session's recording. Same rule as swift-app-sessions 0.3.1.
+
+### Added
+
+- `SessionReplayFrameCost` holds the rule: over 16 ms (p95) one frame every 2 seconds, over `stopP95Ms`
+  (33 ms; null never stops) the session's recording stops; the first 3 frames are not counted, the last 30
+  are read once 10 are counted.
+- `AppSessions.replayStopsOnSlowFrames` (true by default). `sessions-compose` sets it false on an emulator.
+
+### Changed
+
+- `sessions-compose` no longer plans a shot on every draw while no frames are wanted (the power check still
+  runs, so a pause can end), and a touch or a drag left open when the app went to the back no longer holds
+  frames back after it comes to the front.
+
 ## [0.3.1] - 2026-11-23
 
 ### Changed

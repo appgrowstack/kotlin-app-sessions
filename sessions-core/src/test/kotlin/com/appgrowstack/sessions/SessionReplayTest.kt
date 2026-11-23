@@ -337,7 +337,8 @@ class SessionReplayTest {
     @Test
     fun framesThatWeighOnTheMainThreadStopTheRecording() {
         val sessions = launch()
-        repeat(10) {
+        // The first 3 are not counted, then 10 to decide
+        repeat(13) {
             frame(sessions, mainMs = 40.0)
             clock.advance(1000)
         }
@@ -345,6 +346,67 @@ class SessionReplayTest {
         assertFalse(sessions.replayActive)
         sessions.flush()
         assertEquals(SessionReplayStopReason.DEGRADED, events().filterIsInstance<SessionEvent.ReplayStats>().single().stopped)
+    }
+
+    @Test
+    fun theFirstFramesOfASessionDoNotStopTheRecording() {
+        val sessions = launch()
+        repeat(3) {
+            frame(sessions, mainMs = 3000.0)
+            clock.advance(1000)
+        }
+        repeat(10) {
+            frame(sessions, mainMs = 6.0)
+            clock.advance(1000)
+        }
+        assertNull(sessions.replayStopped)
+        assertTrue(sessions.replayActive)
+        assertEquals(1000L, sessions.replayFrameIntervalMs)
+    }
+
+    @Test
+    fun framesOverSixteenMsAreSpacedToTwoSeconds() {
+        val sessions = launch()
+        repeat(13) {
+            frame(sessions, mainMs = 20.0)
+            clock.advance(2000)
+        }
+        assertNull(sessions.replayStopped)
+        assertEquals(2000L, sessions.replayFrameIntervalMs)
+        repeat(30) {
+            frame(sessions, mainMs = 5.0)
+            clock.advance(1000)
+        }
+        assertEquals(1000L, sessions.replayFrameIntervalMs)
+    }
+
+    @Test
+    fun onAnEmulatorHeavyFramesOnlySpaceFramesOut() {
+        val sessions = launch()
+        sessions.replayStopsOnSlowFrames = false
+        repeat(40) {
+            frame(sessions, mainMs = 80.0)
+            clock.advance(2000)
+        }
+        assertNull(sessions.replayStopped)
+        assertTrue(sessions.replayActive)
+        assertEquals(2000L, sessions.replayFrameIntervalMs)
+    }
+
+    @Test
+    fun aNewSessionStartsTheFrameCostOver() {
+        val sessions = launch()
+        repeat(13) {
+            frame(sessions, mainMs = 20.0)
+            clock.advance(1000)
+        }
+        assertEquals(2000L, sessions.replayFrameIntervalMs)
+        sink.enqueue(SessionSinkReply.Accepted(SessionReplayMode.BUFFER, uploadToken = token))
+        sessions.enterBackground()
+        clock.advance(SessionRules.BACKGROUND_TIMEOUT_MS)
+        sessions.enterForeground()
+        assertEquals(s2, sessions.currentSessionId)
+        assertEquals(1000L, sessions.replayFrameIntervalMs)
     }
 
     @Test
