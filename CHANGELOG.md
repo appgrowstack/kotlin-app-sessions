@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-24
+
 ### Added
 
 - `SessionMaskNode` and `SessionRules.partsToHide(root, limit)`: the search for the parts of a frame to
