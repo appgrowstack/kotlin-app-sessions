@@ -64,6 +64,9 @@ public object SessionCapture {
         watchHangs: Boolean = true,
         replayOptions: SessionReplayOptions = SessionReplayOptions(),
     ) {
+        // A second process of the app (`android:process=":sync"`, a widget's) has no screen of the app's and
+        // shares the state file: it must not close the session the main process is in.
+        if (!isMainProcess(application)) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             val previous = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, error ->
@@ -128,6 +131,12 @@ public object SessionCapture {
             currentPid = Process.myPid(),
             currentProcessName = Application.getProcessName(),
         )
+    }
+
+    /** The app's main process (its name is the package's). Before API 28 the name cannot be read: taken as main. */
+    private fun isMainProcess(application: Application): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return true
+        return Application.getProcessName() == application.packageName
     }
 
     /** Processes that started without a screen (a notification, a job) end too: one record is not enough. */
