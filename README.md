@@ -6,7 +6,7 @@ English | [Japanese](README.ja.md)
 
 ## Features
 
-- **Sessions split the usual way.** A launch starts one, and so does coming back after 30 minutes in the background
+- **Sessions split the usual way.** The first activity of a launch starts one, and so does coming back after 30 minutes in the background. A process that shows nothing (a notification, a widget, WorkManager, an alarm) starts none
 - **Screens from your analytics events.** `screen_viewed` moves to its screen. Going back to the screen under the current one is a `pop`, recorded with `back` and, within 2 seconds of entering, `quick_back`. The back key is noted as the `via`
 - **Taps without touching your touches.** Taps are read through `Window.Callback` on every activity's window, and every touch and key goes on to the app unchanged. Positions are 0–10000 of the window. `Modifier.sessionTarget("…")` names an element
 - **Rage taps.** Three or more taps within 1 second and 30 dp of the first
@@ -17,7 +17,7 @@ English | [Japanese](README.ja.md)
 - **Same rules as the iOS package.** `SessionRules` gives the same answers as swift-app-sessions on the shared tables
 - **A screen recording that hides what you mark.** `PixelCopy` of the window at most once a second, painted black before it is shrunk to 1 dp = 1 px and kept as WebP. Only `Modifier.sessionMask()` and password fields are painted (`SessionMaskMode.MARKED`, the only mode); everything else is shown, so mark what people write. Surface and texture views are painted whole. A frame that cannot be painted is dropped
 - **Sent only when it is worth it.** The server's answer decides: `RECORD` sends every segment, `BUFFER` keeps the last 60 seconds on the device and sends them, and what follows, once a session meets a priority condition (rage or dead taps, a hang, a crash, a ticket, a paywall closed without buying…), `NONE` takes nothing. Segments go on an unmetered network, a priority session's also on a metered one up to 3 MB a day
-- **Light on the device.** No frames while a finger is down, while a list still scrolls, in battery saver, when hot, or under 20% and not charging. A frame that looks like the last one keeps no image. The folder keeps 50 MB and 7 days at most, a session 30 minutes or 20 MB
+- **Light on the device.** Frames that hold the main thread are spaced out (p95 over 16 ms: one every 2 seconds, over 33 ms: one every 5); over 100 ms the session's recording stops. No frames while a finger is down, while a list still scrolls, in battery saver, when hot, or under 20% and not charging. A frame that looks like the last one keeps no image. The folder keeps 50 MB and 7 days at most, a session 30 minutes or 20 MB
 - **Few dependencies.** `sessions-core` uses Kotlin's standard library only; `sessions-compose` adds the Android SDK and Compose ui and foundation
 
 The light record keeps no pixels; the recording does only with `AppSessions(replay = …)`. A screen marked `Modifier.sessionNoCapture()` keeps the recording blank while it is shown and while it lies under the shown screen (a screen pushed on it with Navigation Compose), until it is popped. While a dialog, a `ModalBottomSheet` or anything else takes the window's focus, the recording is blank too. `SessionCapture.blankReason(window, sessions, noCaptureScreens)` gives the reason a frame taken now would be blank.
@@ -65,7 +65,7 @@ class App : Application() {
             // optional: the recording, with where its segments go
             replay = SessionReplayRecorder(noBackupFilesDir, sink = mySegmentSink),
         )
-        SessionCapture.install(this, sessions, store, replayOptions = SessionReplayOptions()) // starts the session
+        SessionCapture.install(this, sessions, store, replayOptions = SessionReplayOptions()) // the first activity starts the session
         sessions.observe("screen_viewed", mapOf("screen" to SessionValue.Text("home")))
     }
 }

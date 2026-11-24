@@ -113,7 +113,7 @@ public enum class SessionReplayStopReason(public val wire: String) {
     THERMAL("thermal"),
     /** Under 20% and not charging. */
     BATTERY("battery"),
-    /** Taking frames weighs on the main thread (p95 over 33 ms). Stops for the rest of the session. */
+    /** Taking frames weighs on the main thread (p95 over 100 ms). Stops for the rest of the session. */
     DEGRADED("degraded"),
     /** The session reached 30 minutes or 20 MB of recording. Stops for the rest of the session. */
     SESSION_LIMIT("session_limit"),

@@ -339,13 +339,25 @@ class SessionReplayTest {
         val sessions = launch()
         // The first 3 are not counted, then 10 to decide
         repeat(13) {
-            frame(sessions, mainMs = 40.0)
+            frame(sessions, mainMs = 150.0)
             clock.advance(1000)
         }
         assertEquals(SessionReplayStopReason.DEGRADED, sessions.replayStopped)
         assertFalse(sessions.replayActive)
         sessions.flush()
         assertEquals(SessionReplayStopReason.DEGRADED, events().filterIsInstance<SessionEvent.ReplayStats>().single().stopped)
+    }
+
+    @Test
+    fun framesOverThirtyThreeMsAreSpacedToFiveSecondsAndKeepRecording() {
+        val sessions = launch()
+        repeat(40) {
+            frame(sessions, mainMs = 40.0)
+            clock.advance(5000)
+        }
+        assertNull(sessions.replayStopped)
+        assertTrue(sessions.replayActive)
+        assertEquals(5000L, sessions.replayFrameIntervalMs)
     }
 
     @Test
@@ -385,12 +397,12 @@ class SessionReplayTest {
         val sessions = launch()
         sessions.replayStopsOnSlowFrames = false
         repeat(40) {
-            frame(sessions, mainMs = 80.0)
-            clock.advance(2000)
+            frame(sessions, mainMs = 200.0)
+            clock.advance(5000)
         }
         assertNull(sessions.replayStopped)
         assertTrue(sessions.replayActive)
-        assertEquals(2000L, sessions.replayFrameIntervalMs)
+        assertEquals(5000L, sessions.replayFrameIntervalMs)
     }
 
     @Test

@@ -6,7 +6,7 @@ Androidアプリの中で人が何をしたかを、セッションごとに記�
 
 ## 機能
 
-- **セッションの区切り。** 起動で1つ始まり、バックグラウンドに30分いた後に戻ったときにも始まる
+- **セッションの区切り。** 起動して最初のアクティビティが前に出たときに1つ始まり、バックグラウンドに30分いた後に戻ったときにも始まる。画面を出さないプロセス（通知・ウィジェット・WorkManager・アラーム）では始まらない
 - **画面は計測の出来事から。** `screen_viewed`でその画面へ動く。今の画面の下の画面へ戻るのは`pop`で、`back`と、入ってから2秒以内なら`quick_back`も記録する。戻るキーは`via`として残す
 - **タッチを止めないタップの記録。** 各アクティビティのウィンドウで`Window.Callback`を通してタップを読む。タッチとキーは全部そのままアプリに渡る。位置はウィンドウに対する0〜10000。`Modifier.sessionTarget("…")`で要素に名前を付ける
 - **rage tap。** 最初のタップから1秒以内・30dp以内に3回以上
@@ -17,7 +17,7 @@ Androidアプリの中で人が何をしたかを、セッションごとに記�
 - **iOSのパッケージと同じ判定。** `SessionRules`は共通の表でswift-app-sessionsと同じ答えを出す
 - **マークした所を隠す画面の録画。** 窓を`PixelCopy`で1秒に1枚まで撮り、縮める前に黒く塗ってから1dp＝1pxにしてWebPで持つ。塗るのは`Modifier.sessionMask()`とパスワードの欄だけ（`SessionMaskMode.MARKED`。モードはこれだけ）。ほかは全部写るので、人が書いた文にはマークを付ける。SurfaceViewとTextureViewは丸ごと塗る。塗れなかったコマは捨てる
 - **送る価値がある時だけ送る。** サーバーの答えで決める。`RECORD`は塊を全部送る。`BUFFER`は直近60秒だけを端末に残し、優先の条件（rage tapやdead tap・止まり・クラッシュ・問い合わせ・買わずに閉じたペイウォールなど）に当たったら、残した分とその後を送る。`NONE`は撮らない。塊は従量でない回線で送り、優先のセッションは従量の回線でも1日3MBまで送る
-- **端末に軽い。** 指が触れている間・リストの惰性の間・省電力・発熱・電池20%未満で充電していない時は撮らない。前と同じに見えるコマは画像を持たない。溜めるのは全体で50MB・7日まで、1つのセッションは30分か20MBまで
+- **端末に軽い。** 撮るのにメインスレッドを使うコマは間を空ける（p95が16msを超えたら2秒に1枚、33msを超えたら5秒に1枚）。100msを超えたらそのセッションの録画を止める。指が触れている間・リストの惰性の間・省電力・発熱・電池20%未満で充電していない時は撮らない。前と同じに見えるコマは画像を持たない。溜めるのは全体で50MB・7日まで、1つのセッションは30分か20MBまで
 - **依存が少ない。** `sessions-core`はKotlinの標準ライブラリだけ。`sessions-compose`はAndroidのSDKとComposeのuiとfoundationを足す
 
 軽い記録は画素を持たない。録画は`AppSessions(replay = …)`を渡した時だけ撮る。`Modifier.sessionNoCapture()`を付けた画面は、見えている間と、Navigation Composeでその上に別の画面を開いている間（戻って閉じるまで）、録画を撮らない。ダイアログ・`ModalBottomSheet`など窓のフォーカスを取る物が出ている間も撮らない。今撮ると撮らない理由は`SessionCapture.blankReason(window, sessions, noCaptureScreens)`で分かる。
@@ -65,7 +65,7 @@ class App : Application() {
             // optional: the recording, with where its segments go
             replay = SessionReplayRecorder(noBackupFilesDir, sink = mySegmentSink),
         )
-        SessionCapture.install(this, sessions, store, replayOptions = SessionReplayOptions()) // starts the session
+        SessionCapture.install(this, sessions, store, replayOptions = SessionReplayOptions()) // the first activity starts the session
         sessions.observe("screen_viewed", mapOf("screen" to SessionValue.Text("home")))
     }
 }

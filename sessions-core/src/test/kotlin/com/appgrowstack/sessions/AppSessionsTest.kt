@@ -142,6 +142,99 @@ class AppSessionsTest {
         assertEquals(3, sink.batches.count { it.session.sessionId == s1 })
     }
 
+    // ---- Processes without a screen
+
+    @Test
+    fun aProcessWithoutAScreenEndsThePreviousSessionAndRecordsNothing() {
+        val first = launch()
+        first.screen("bookshelf")
+        clock.advance(2000)
+        // A notification, a widget or a job wakes the app: Application.onCreate only
+        val headless = make()
+        headless.closePrevious()
+        headless.observe("memo_created", mapOf("view" to SessionValue.Text("list")))
+        headless.tick()
+        headless.flush()
+        assertNull(headless.currentSessionId)
+        assertEquals(SessionEvent.End(0, SessionEndReason.KILLED), events(s1).last())
+        assertEquals(setOf(s1), sink.batches.map { it.session.sessionId }.toSet())
+        assertNull(store.stored?.open)
+        assertEquals(false, store.stored?.running)
+    }
+
+    @Test
+    fun theFirstScreenAfterAProcessWithoutOneStartsTheSession() {
+        val first = launch()
+        clock.advance(2000)
+        first.enterBackground()
+        make().closePrevious()
+        clock.advance(3_600_000)
+        // The next process shows a screen
+        val next = make()
+        next.closePrevious()
+        assertNull(next.currentSessionId)
+        next.enterForeground()
+        assertEquals(s2, next.currentSessionId)
+        assertEquals(clock.nowMs(), next.currentSessionStartedAt)
+        next.flush()
+        assertEquals(listOf<SessionEvent>(SessionEvent.Start(0, SessionEndReason.BACKGROUND_TIMEOUT, s1, false)), events(s2))
+        assertEquals(1, events(s1).count { it is SessionEvent.End })
+        assertEquals(true, store.stored?.running)
+    }
+
+    @Test
+    fun enterForegroundBeforeClosePreviousDoesNothing() {
+        val sessions = make()
+        sessions.enterForeground()
+        assertNull(sessions.currentSessionId)
+        assertTrue(sink.batches.isEmpty())
+    }
+
+    @Test
+    fun theFrontStartsTheSessionOnceAndThenOnlyComesBack() {
+        val sessions = make()
+        sessions.closePrevious()
+        sessions.enterForeground()
+        sessions.screen("bookshelf")
+        sessions.enterBackground()
+        clock.advance(1000)
+        sessions.enterForeground()
+        sessions.flush()
+        assertEquals(listOf("start", "screen", "background", "foreground"), kinds())
+        assertEquals(s1, sessions.currentSessionId)
+    }
+
+    // ---- Exit records
+
+    @Test
+    fun onlyAnExitOfThePreviousSessionsProcessDecidesTheEnd() {
+        launch()
+        val startedAt = clock.nowMs()
+        clock.advance(60_000)
+        launch(
+            exit = SessionExitInfo(
+                exits = listOf(
+                    // Newest first, as Android lists them: this process, then the session's, then an older run's
+                    SessionProcessExit("REASON_USER_REQUESTED", startedAt + 60_000, pid = 300),
+                    SessionProcessExit("REASON_ANR", startedAt + 30_000, pid = 200),
+                    SessionProcessExit("REASON_CRASH", startedAt - 1000, pid = 100),
+                ),
+                currentPid = 300,
+            ),
+        )
+        assertEquals(listOf(SessionEndReason.HUNG), events().filterIsInstance<SessionEvent.End>().map { it.reason })
+    }
+
+    @Test
+    fun anExitFromBeforeThePreviousSessionIsNotItsEnd() {
+        launch()
+        val startedAt = clock.nowMs()
+        clock.advance(60_000)
+        launch(exit = SessionExitInfo(exits = listOf(SessionProcessExit("REASON_CRASH", startedAt - 1, pid = 100)), currentPid = 300))
+        // The crash was of an earlier run: the session was killed
+        assertEquals(listOf(SessionEndReason.KILLED), events().filterIsInstance<SessionEvent.End>().map { it.reason })
+    }
+
     // ---- Screens and taps
 
     @Test

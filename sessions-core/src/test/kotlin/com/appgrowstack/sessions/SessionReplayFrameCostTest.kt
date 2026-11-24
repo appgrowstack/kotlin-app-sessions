@@ -3,6 +3,7 @@ package com.appgrowstack.sessions
 import com.appgrowstack.sessions.SessionReplayFrameCost.Verdict
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /** The same cases as swift-app-sessions' `SessionReplayFrameCostTests`. */
 class SessionReplayFrameCostTest {
@@ -26,9 +27,20 @@ class SessionReplayFrameCostTest {
     }
 
     @Test
-    fun overThirtyThreeMsStopsAndStaysStoppedUntilReset() {
+    fun overThirtyThreeMsSpacesFramesToFiveSecondsAndDoesNotStop() {
         val cost = SessionReplayFrameCost()
-        repeat(13) { cost.add(50.0) }
+        repeat(40) { cost.add(50.0) }
+        assertEquals(Verdict.VERY_SLOW, cost.verdict)
+        assertEquals(5000L, cost.intervalMs(live = false))
+        assertEquals(500L, cost.intervalMs(live = true))
+        repeat(30) { cost.add(5.0) }
+        assertEquals(Verdict.NORMAL, cost.verdict)
+    }
+
+    @Test
+    fun overOneHundredMsStopsAndStaysStoppedUntilReset() {
+        val cost = SessionReplayFrameCost()
+        repeat(13) { cost.add(150.0) }
         assertEquals(Verdict.DEGRADED, cost.verdict)
         repeat(40) { cost.add(1.0) }
         assertEquals(Verdict.DEGRADED, cost.verdict)
@@ -58,16 +70,16 @@ class SessionReplayFrameCostTest {
     @Test
     fun noStopThresholdOnlySpacesFramesOut() {
         val cost = SessionReplayFrameCost(stopP95Ms = null)
-        repeat(40) { cost.add(80.0) }
-        assertEquals(Verdict.SLOW, cost.verdict)
+        repeat(40) { cost.add(200.0) }
+        assertEquals(Verdict.VERY_SLOW, cost.verdict)
     }
 
     @Test
     fun fewerThanTenCountedFramesDecideNothing() {
         val cost = SessionReplayFrameCost()
-        repeat(12) { cost.add(100.0) }
+        repeat(12) { cost.add(150.0) }
         assertEquals(Verdict.NORMAL, cost.verdict)
-        cost.add(100.0)
+        cost.add(150.0)
         assertEquals(Verdict.DEGRADED, cost.verdict)
     }
 
@@ -76,9 +88,18 @@ class SessionReplayFrameCostTest {
         val cost = SessionReplayFrameCost(warmUpFrames = 0)
         repeat(20) { cost.add(Double.NaN); cost.add(Double.POSITIVE_INFINITY); cost.add(-1.0) }
         assertEquals(Verdict.NORMAL, cost.verdict)
-        repeat(9) { cost.add(100.0) }
+        repeat(9) { cost.add(150.0) }
         assertEquals(Verdict.NORMAL, cost.verdict)
-        cost.add(100.0)
+        cost.add(150.0)
         assertEquals(Verdict.DEGRADED, cost.verdict)
+    }
+
+    @Test
+    fun percentilesOfTheCountedFrames() {
+        val cost = SessionReplayFrameCost(warmUpFrames = 0)
+        assertNull(cost.percentiles)
+        for (ms in 1..20) cost.add(ms.toDouble())
+        assertEquals(11.0, cost.percentiles?.p50)
+        assertEquals(20.0, cost.percentiles?.p95)
     }
 }

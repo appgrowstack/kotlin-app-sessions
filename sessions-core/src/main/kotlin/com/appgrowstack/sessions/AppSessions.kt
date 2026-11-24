@@ -12,7 +12,7 @@ import kotlin.math.max
  * ```kotlin
  * val sessions = AppSessions(FileSessionSink(context.noBackupFilesDir), deviceInfo = { SessionDeviceInfo.current(context, "play") },
  *     store = FileSessionStateStore(context.noBackupFilesDir))
- * SessionCapture.install(application, sessions)          // sessions-compose; starts the session
+ * SessionCapture.install(application, sessions)          // sessions-compose; the first screen starts the session
  * analytics.observe { name, props -> sessions.observe(name, props) }
  * ```
  *
@@ -88,9 +88,9 @@ public class AppSessions(
     private var live: SessionLiveLink? = null
 
     /**
-     * Whether frames that hold the main thread over 33 ms (p95) stop the session's recording (`DEGRADED`).
+     * Whether frames that hold the main thread over 100 ms (p95) stop the session's recording (`DEGRADED`).
      * `sessions-compose` sets it false on an emulator, whose times say nothing of a device's; there frames
-     * are only spaced out (one every 2 seconds over 16 ms).
+     * are only spaced out (one every 2 seconds over 16 ms, every 5 over 33 ms).
      */
     public var replayStopsOnSlowFrames: Boolean
         get() = synchronized(lock) { frameCost.stopP95Ms != null }
@@ -127,7 +127,8 @@ public class AppSessions(
 
     /**
      * The shortest time between two frames now: 1 second, 2 when taking them weighs (p95 over 16 ms, the
-     * first 3 frames of a session not counted: [SessionReplayFrameCost]), 0.5 while someone watches live.
+     * first 3 frames of a session not counted: [SessionReplayFrameCost]), 5 when they weigh more (over
+     * 33 ms), 0.5 while someone watches live.
      */
     public val replayFrameIntervalMs: Long
         get() = synchronized(lock) {
@@ -150,45 +151,66 @@ public class AppSessions(
 
     // ---- Lifecycle
 
-    /** Once, at launch: ends the previous session with what is known about it and starts a new one. */
+    /**
+     * Once, at launch of a process that shows the app: ends the previous session with what is known
+     * about it and starts a new one. A process may also start without a screen (a notification, a
+     * widget, a job, an alarm): call [closePrevious] there instead, and the session starts with
+     * [enterForeground] (`sessions-compose` does so).
+     */
     public fun start(exit: SessionExitInfo = SessionExitInfo.NONE) {
         synchronized(lock) {
-            if (started) return
-            started = true
-            current = this
-            state = store.load() ?: SessionStoredState()
-            val hung = store.hangMarker()
-            store.setHangMarker(false)
-            var previousEnd = SessionEndReason.UNKNOWN
-            var previousId: String? = null
-            val open = state.open
-            val closed = state.lastClosed
-            if (open != null) {
-                val lastKind = if (hung) "hang" else open.lastKind
-                val decision = SessionRules.endReason(
-                    SessionRules.EndInput(
-                        platform = open.device.info.platform, androidApi = exit.androidApi, previousRecord = true,
-                        runningFlag = state.running, lastEvent = lastKind, metricKitCrash = exit.metricKitCrash,
-                        exitReason = exit.exitReason, crashHandler = state.crashRecorded,
-                    ),
-                )
-                close(open, open.lastT, decision.reason, lastKind, state.running, open.scrolls)
-                previousEnd = decision.reason
-                previousId = open.device.sessionId
-            } else if (closed != null) {
-                previousEnd = closed.reason
-                previousId = closed.device.sessionId
-            }
-            state = state.copy(crashRecorded = false)
-            begin(previousEnd, previousId)
-            replay?.let { recorder ->
-                val kept = state.replays.map { it.sessionId }.toSet()
-                recorder.sessionIds().filter { it !in kept }.forEach(recorder::removeSession)
-                recorder.sweep(clock.nowMs(), sendingIds())
-            }
+            if (!closePreviousLocked(exit)) return
+            begin(state.lastClosed?.reason ?: SessionEndReason.UNKNOWN, state.lastClosed?.device?.sessionId)
             save()
         }
         flush()
+    }
+
+    /**
+     * Once, at launch: ends the previous session with what is known about it, and starts none. The next
+     * [enterForeground] starts the session, so a process that never shows a screen records nothing.
+     */
+    public fun closePrevious(exit: SessionExitInfo = SessionExitInfo.NONE) {
+        synchronized(lock) {
+            if (!closePreviousLocked(exit)) return
+            state = state.copy(running = false)
+            save()
+        }
+        flush()
+    }
+
+    /** False when it has run already. */
+    private fun closePreviousLocked(exit: SessionExitInfo): Boolean {
+        if (started) return false
+        started = true
+        current = this
+        state = store.load() ?: SessionStoredState()
+        val hung = store.hangMarker()
+        store.setHangMarker(false)
+        val open = state.open
+        if (open != null) {
+            val lastKind = if (hung) "hang" else open.lastKind
+            // Only an exit of the previous session's own process says how it ended
+            val exitReason = when (val exits = exit.exits) {
+                null -> exit.exitReason
+                else -> SessionRules.previousExit(exits, open.device.startedAt, exit.currentPid, exit.currentProcessName)?.reason
+            }
+            val decision = SessionRules.endReason(
+                SessionRules.EndInput(
+                    platform = open.device.info.platform, androidApi = exit.androidApi, previousRecord = true,
+                    runningFlag = state.running, lastEvent = lastKind, metricKitCrash = exit.metricKitCrash,
+                    exitReason = exitReason, crashHandler = state.crashRecorded,
+                ),
+            )
+            close(open, open.lastT, decision.reason, lastKind, state.running, open.scrolls)
+        }
+        state = state.copy(crashRecorded = false)
+        replay?.let { recorder ->
+            val kept = state.replays.map { it.sessionId }.toSet()
+            recorder.sessionIds().filter { it !in kept }.forEach(recorder::removeSession)
+            recorder.sweep(clock.nowMs(), sendingIds())
+        }
+        return true
     }
 
     public fun enterBackground() {
@@ -209,9 +231,20 @@ public class AppSessions(
         flush()
     }
 
+    /**
+     * The app came to the front. After [closePrevious] with no session yet, it starts the session; after
+     * 30 minutes in the back, a new one.
+     */
     public fun enterForeground() {
         synchronized(lock) {
-            val open = state.open ?: return
+            val open = state.open
+            if (open == null) {
+                // No session yet in this process: its first screen starts one
+                if (!started) return
+                begin(state.lastClosed?.reason ?: SessionEndReason.UNKNOWN, state.lastClosed?.device?.sessionId)
+                save()
+                return@synchronized
+            }
             val at = backgroundAt ?: return
             backgroundAt = null
             val now = clock.nowMs()
@@ -906,7 +939,7 @@ public class AppSessions(
         }
 
         /** p95 over this stops the session's recording, on a device ([replayStopsOnSlowFrames]). */
-        private const val STOP_P95_MS = 33.0
+        private const val STOP_P95_MS = 100.0
 
         /** The `p` quantile (nearest rank) of `values`, 0 for none. */
         private fun percentile(values: List<Double>, p: Double): Double {

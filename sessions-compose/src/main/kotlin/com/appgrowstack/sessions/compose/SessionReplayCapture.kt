@@ -67,8 +67,8 @@ public class AndroidSessionNetwork(context: Context) : SessionNetwork {
  * Takes the recording's frames of the activity in the front (sessions.md 3.2): `PixelCopy` of its window
  * on a thread of its own, painted black where [SessionMaskFinder] says before it is shrunk to 1 dp = 1 px,
  * then WebP (lossy, quality 35). At most one a second (two while watched live, one every two when frames
- * weigh: p95 over 16 ms, the first 3 not counted; over 33 ms the session's recording stops, but not on an
- * emulator, [AndroidEmulator]); first 0.3 seconds after a screen is entered and 0.5 seconds after a tap; not while a finger is down
+ * weigh: p95 over 16 ms, the first 3 not counted; one every five over 33 ms; over 100 ms the session's
+ * recording stops, but not on an emulator, [AndroidEmulator]); first 0.3 seconds after a screen is entered and 0.5 seconds after a tap; not while a finger is down
  * and not until the screen has stopped moving for 0.2 seconds after a drag. Not in battery saver, when the
  * device is hot or under 20% and not charging. A frame whose parts to hide cannot be found (the search threw, took
  * over 16 ms or could not place one) or painted is blank (`masking_failed`).

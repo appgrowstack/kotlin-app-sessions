@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `SessionRules.maskRects(scale, image, budgetMs, nowMs, find)`: the search fails closed. When it throws or
   takes over 16 ms (`SESSION_MASK_BUDGET_MS`), the frame is blank (`MASKING_FAILED`).
 - `SessionRules.isPasswordInputType(inputType)` and `SessionRules.isPasswordHint(hint)`.
+- `SessionReplayFrameCost.Verdict.VERY_SLOW` (one frame every 5 seconds), `verySlowP95Ms` (33 ms) and
+  `percentiles` (the p50 and p95 of the frames counted in the window).
+- `AppSessions.closePrevious(exit)`: ends the previous session and starts none; the next `enterForeground()`
+  starts the session.
+- `SessionProcessExit`, `SessionExitInfo.exits`, `currentPid` and `currentProcessName`, and
+  `SessionRules.previousExit(exits, sessionStartedAtMs, currentPid, currentProcessName)`: the exit record of
+  the previous session's own process.
 
 ### Changed
 
@@ -23,6 +30,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Compose node whose content type is `ContentType.Password` or `ContentType.NewPassword`.
 - `SessionRules.maskRects` drops the frame for a rectangle or a scale that is not a finite number, instead of
   painting nothing for it.
+- Frames that hold the main thread no longer stop the recording at 33 ms (p95). Over 33 ms a frame is taken
+  every 5 seconds; the session's recording stops (`DEGRADED`) only over 100 ms. Same rule as
+  swift-app-sessions.
+- `SessionCapture.install` no longer starts a session in `Application.onCreate`: it ends the previous one
+  (`closePrevious`), and the session starts when the first activity comes to the front.
+- `SessionCapture.exitInfo` reads the last 8 exit records instead of 1.
+
+### Fixed
+
+- A process started without a screen (a notification, a widget, WorkManager, an alarm) left an empty session
+  (0 seconds, no screen) that the next launch ended as `killed` or `crashed`. Seen on users' devices and on
+  Play's pre-launch robots. Such a process now records nothing.
+- The end of the previous session could come from an exit record of another process: the newest record was
+  used whatever its time. Only a record that ended at or after the session started, of another process than
+  the current one (and of the same process name), counts; of those, the first to end.
 
 ## [0.3.1] - 2026-11-23
 

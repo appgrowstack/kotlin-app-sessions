@@ -29,3 +29,22 @@ private fun SessionRules.baseEndReason(input: EndInput): SessionEndReason {
     if (android && !modern) return SessionEndReason.UNKNOWN
     return SessionEndReason.KILLED
 }
+
+/**
+ * The exit of the process the previous session ran in, from the newest exits of the app's processes:
+ * one that ended at or after the session started ([sessionStartedAtMs]), not the current process
+ * ([currentPid]) and of the same process name when both are known. Of those, the first to end: a
+ * process that started later (a notification, a widget, a job) and ended too came after the session's.
+ * Null when none holds (the record is not there, or it is of another run): the reason is then unknown
+ * to the exit records.
+ */
+public fun SessionRules.previousExit(
+    exits: List<SessionProcessExit>,
+    sessionStartedAtMs: Long,
+    currentPid: Int?,
+    currentProcessName: String? = null,
+): SessionProcessExit? = exits
+    .filter { it.timestampMs >= sessionStartedAtMs }
+    .filter { currentPid == null || it.pid != currentPid }
+    .filter { currentProcessName == null || it.processName == null || it.processName == currentProcessName }
+    .minByOrNull { it.timestampMs }

@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Window
@@ -21,6 +22,7 @@ import com.appgrowstack.sessions.SessionCaptureScene
 import com.appgrowstack.sessions.SessionDeviceInfo
 import com.appgrowstack.sessions.SessionExitInfo
 import com.appgrowstack.sessions.SessionPlatform
+import com.appgrowstack.sessions.SessionProcessExit
 import com.appgrowstack.sessions.SessionRect
 import com.appgrowstack.sessions.SessionRules
 import com.appgrowstack.sessions.SessionScreen
@@ -34,7 +36,9 @@ import kotlin.math.hypot
  * Feeds an [AppSessions] from Android: the app going to the back and the front (by its started
  * activities), taps on every activity's window, the back key, how the previous process ended
  * (`ApplicationExitInfo` from API 30, the SDK's crash handler before it) and hangs of the main
- * thread. Every touch and key goes on to the app unchanged. When the recorder has a recording
+ * thread. Every touch and key goes on to the app unchanged. The session starts when the first activity
+ * comes to the front: a process that shows nothing (a notification, a widget, WorkManager, an alarm)
+ * only ends the previous session and records nothing. When the recorder has a recording
  * (`AppSessions(replay = …)`), it also takes the recording's frames of the activity in the front
  * (`PixelCopy`, painted over as `replayOptions` says) and reads the network with [AndroidSessionNetwork].
  *
@@ -44,7 +48,7 @@ import kotlin.math.hypot
  *         super.onCreate()
  *         val store = FileSessionStateStore(noBackupFilesDir)
  *         val sessions = AppSessions(FileSessionSink(noBackupFilesDir), { SessionDeviceInfo.current(this, "play") }, store)
- *         SessionCapture.install(this, sessions, store)   // starts the session too
+ *         SessionCapture.install(this, sessions, store)   // the first activity starts the session
  *     }
  * }
  * ```
@@ -73,7 +77,8 @@ public object SessionCapture {
             sessions.replayStopsOnSlowFrames = !AndroidEmulator.current
             SessionReplayCapture(application, sessions, replayOptions)
         }
-        sessions.start(exitInfo(application))
+        // `Application.onCreate` runs for every process, with a screen or without one
+        sessions.closePrevious(exitInfo(application))
         application.registerActivityLifecycleCallbacks(Lifecycle(sessions, replay))
         val tick = object : Runnable {
             override fun run() {
@@ -103,14 +108,30 @@ public object SessionCapture {
         return SessionRules.blankReason(scene, noCaptureScreens)
     }
 
-    /** The newest exit of an earlier process of this app (API 30 and later). */
+    /**
+     * The newest exits of this app's processes (API 30 and later). The recorder takes the one of the
+     * previous session's process ([com.appgrowstack.sessions.previousExit]): ended after that session
+     * started, and not this process.
+     */
     public fun exitInfo(context: Context): SessionExitInfo {
         val api = Build.VERSION.SDK_INT
         if (api < Build.VERSION_CODES.R) return SessionExitInfo(androidApi = api)
         val manager = context.getSystemService(ActivityManager::class.java)
-        val latest = runCatching { manager?.getHistoricalProcessExitReasons(context.packageName, 0, 1)?.firstOrNull() }.getOrNull()
-        return SessionExitInfo(exitReason = latest?.let { reasonName(it.reason) }, androidApi = api)
+        val exits = runCatching {
+            manager?.getHistoricalProcessExitReasons(context.packageName, 0, EXITS_READ).orEmpty().map { info ->
+                SessionProcessExit(reasonName(info.reason), info.timestamp, info.pid, info.processName)
+            }
+        }.getOrNull()
+        return SessionExitInfo(
+            androidApi = api,
+            exits = exits,
+            currentPid = Process.myPid(),
+            currentProcessName = Application.getProcessName(),
+        )
     }
+
+    /** Processes that started without a screen (a notification, a job) end too: one record is not enough. */
+    private const val EXITS_READ = 8
 
     internal fun reasonName(reason: Int): String = when (reason) {
         ApplicationExitInfo.REASON_USER_REQUESTED -> "REASON_USER_REQUESTED"

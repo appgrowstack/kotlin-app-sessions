@@ -217,12 +217,31 @@ public class FileSessionStateStore(directory: File) : SessionStateStore {
 public data class SessionExitInfo(
     /** iOS: MetricKit already has a crash diagnostic for the previous run. */
     val metricKitCrash: Boolean = false,
-    /** Android 30+: the newest `ApplicationExitInfo` reason (`REASON_CRASH` …). */
+    /** Android 30+: the reason of the previous session's exit (`REASON_CRASH` …), when it is already known. Ignored when [exits] is given. */
     val exitReason: String? = null,
     /** Android: the API level. Null means 30 or later. */
     val androidApi: Int? = null,
+    /**
+     * Android 30+: the newest exits of this app's processes (`getHistoricalProcessExitReasons`). The
+     * recorder uses the one of the previous session ([SessionRules.previousExit]), or none.
+     */
+    val exits: List<SessionProcessExit>? = null,
+    /** Android: the current process, which is not the previous session's. */
+    val currentPid: Int? = null,
+    /** Android: the current process's name (`Application.getProcessName()`). */
+    val currentProcessName: String? = null,
 ) {
     public companion object {
         public val NONE: SessionExitInfo = SessionExitInfo()
     }
 }
+
+/** One exit of a process of the app, as Android's `ApplicationExitInfo` tells it. */
+public data class SessionProcessExit(
+    /** `REASON_CRASH` … */
+    val reason: String,
+    /** When the process ended (ms since 1970, as `System.currentTimeMillis()`). */
+    val timestampMs: Long,
+    val pid: Int,
+    val processName: String? = null,
+)
