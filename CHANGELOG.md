@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `SessionMaskNode` and `SessionRules.partsToHide(root, limit)`: the search for the parts of a frame to
+  hide, apart from Android. A `Modifier.sessionMask()`, a password field, or a surface or texture view is
+  painted whole; a part whose place cannot be told, or a hierarchy of more than 10,000 nodes, drops the frame
+  (`MASKING_FAILED`).
+- `SessionRules.maskRects(scale, image, budgetMs, nowMs, find)`: the search fails closed. When it throws or
+  takes over 16 ms (`SESSION_MASK_BUDGET_MS`), the frame is blank (`MASKING_FAILED`).
+- `SessionRules.isPasswordInputType(inputType)` and `SessionRules.isPasswordHint(hint)`.
+
+### Changed
+
+- Password fields also include an `EditText` whose `autofillHints` hold `password` or `newPassword`, and a
+  Compose node whose content type is `ContentType.Password` or `ContentType.NewPassword`.
+- `SessionRules.maskRects` drops the frame for a rectangle or a scale that is not a finite number, instead of
+  painting nothing for it.
+
 ## [0.3.1] - 2026-11-23
 
 ### Fixed

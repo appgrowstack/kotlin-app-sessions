@@ -70,7 +70,8 @@ public class AndroidSessionNetwork(context: Context) : SessionNetwork {
  * weigh: p95 over 16 ms, the first 3 not counted; over 33 ms the session's recording stops, but not on an
  * emulator, [AndroidEmulator]); first 0.3 seconds after a screen is entered and 0.5 seconds after a tap; not while a finger is down
  * and not until the screen has stopped moving for 0.2 seconds after a drag. Not in battery saver, when the
- * device is hot or under 20% and not charging. A frame that cannot be painted is blank (`masking_failed`).
+ * device is hot or under 20% and not charging. A frame whose parts to hide cannot be found (the search threw, took
+ * over 16 ms or could not place one) or painted is blank (`masking_failed`).
  */
 internal class SessionReplayCapture(context: Context, private val sessions: AppSessions, private val options: SessionReplayOptions) {
     private val main = Handler(Looper.getMainLooper())
@@ -217,13 +218,11 @@ internal class SessionReplayCapture(context: Context, private val sessions: AppS
             sessions.replayBlank(outW, outH, blank, ms(started))
             return
         }
-        // Fail closed: masks that cannot be found, or take longer than a frame (16 ms), drop the frame
-        val plan: SessionMaskPlan = try {
-            SessionRules.maskRects(1.0, SessionPixelSize(wPx, hPx), SessionMaskFinder.rects(window, options.mask))
-        } catch (_: Throwable) {
-            SessionMaskPlan(true, emptyList(), SessionBlankReason.MASKING_FAILED)
+        // Fail closed (SC8): masks that cannot be found, throw, or take longer than a frame (16 ms) drop the frame
+        val plan: SessionMaskPlan = SessionRules.maskRects(1.0, SessionPixelSize(wPx, hPx), nowMs = { SystemClock.elapsedRealtimeNanos() / 1_000_000.0 }) {
+            SessionMaskFinder.rects(window, options.mask)
         }
-        if (plan.drop || ms(started) > MASK_BUDGET_MS) {
+        if (plan.drop) {
             sessions.replayBlank(outW, outH, SessionBlankReason.MASKING_FAILED, ms(started))
             return
         }
@@ -288,7 +287,6 @@ internal class SessionReplayCapture(context: Context, private val sessions: AppS
         const val SCREEN_DELAY_MS = 300L
         const val TAP_DELAY_MS = 500L
         const val SETTLE_MS = 200L
-        const val MASK_BUDGET_MS = 16.0
         const val WEBP_QUALITY = 35
     }
 }

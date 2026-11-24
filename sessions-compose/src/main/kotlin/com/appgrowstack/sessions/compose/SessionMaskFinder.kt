@@ -1,7 +1,6 @@
 package com.appgrowstack.sessions.compose
 
 import android.graphics.Rect
-import android.text.InputType
 import android.text.method.PasswordTransformationMethod
 import android.view.SurfaceView
 import android.view.TextureView
@@ -9,18 +8,27 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.widget.EditText
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.autofill.contentHints
 import androidx.compose.ui.node.RootForTest
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import com.appgrowstack.sessions.SessionMaskMode
+import com.appgrowstack.sessions.SessionMaskNode
 import com.appgrowstack.sessions.SessionRect
+import com.appgrowstack.sessions.SessionRules
+import com.appgrowstack.sessions.isPasswordHint
+import com.appgrowstack.sessions.isPasswordInputType
+import com.appgrowstack.sessions.partsToHide
 
 /**
  * What a frame of `window` paints over, in the window's pixels: only `Modifier.sessionMask()` and password
- * fields (an `EditText` whose input type or transformation is a password's, a Compose node with
- * `Password`); everything else is shown. Surface and texture views are painted whole. Views inside
- * Compose (`AndroidView`) are walked with the same rule. Called on the main thread. A place it cannot find
- * comes back as null, and the frame is dropped.
+ * fields, which are always hidden; everything else is shown. A password field is an `EditText` whose input
+ * type, transformation or autofill hint is a password's, or a Compose node with `Password` (a
+ * `PasswordVisualTransformation`, `SecureTextField`) or the content type `Password` or `NewPassword`. Surface
+ * and texture views are painted whole. Views inside Compose (`AndroidView`) are walked with the same rule.
+ * Called on the main thread. A place it cannot find comes back as null, and the frame is dropped.
  */
 internal object SessionMaskFinder {
     @Suppress("UNUSED_PARAMETER")
@@ -28,49 +36,57 @@ internal object SessionMaskFinder {
         val decor = window.peekDecorView() ?: return listOf(null)
         val out = mutableListOf<SessionRect?>()
         SessionMarks.masks(window).forEach { out.add(SessionRect(it.left.toDouble(), it.top.toDouble(), it.width.toDouble(), it.height.toDouble())) }
-        walk(decor, out)
+        out.addAll(SessionRules.partsToHide(ViewNode(decor)))
         return out
     }
 
-    private fun walk(view: View, out: MutableList<SessionRect?>) {
-        if (view.visibility != View.VISIBLE) return
-        when {
-            view is RootForTest -> compose(view.semanticsOwner.unmergedRootSemanticsNode, out)
-            view is SurfaceView || view is TextureView -> { add(view, out); return }
-            view is EditText && isPassword(view) -> { add(view, out); return }
-        }
-        // Also the views of `AndroidView` under a Compose view, with the same rule
-        if (view is ViewGroup) children(view).forEach { walk(it, out) }
+    fun isPassword(view: EditText): Boolean =
+        SessionRules.isPasswordInputType(view.inputType) ||
+            view.transformationMethod is PasswordTransformationMethod ||
+            view.autofillHints?.any { SessionRules.isPasswordHint(it) } == true
+
+    fun isPassword(type: ContentType?): Boolean = type?.contentHints?.any { SessionRules.isPasswordHint(it) } == true
+
+    /** An Android view: a Compose view goes on into its semantics nodes, then into its `AndroidView`s. */
+    private class ViewNode(private val view: View) : SessionMaskNode {
+        override val shown: Boolean get() = view.visibility == View.VISIBLE
+
+        override val hidesWhole: Boolean
+            get() = view is SurfaceView || view is TextureView || (view is EditText && isPassword(view))
+
+        override val bounds: SessionRect
+            get() {
+                if (view.width == 0 || view.height == 0) return EMPTY
+                val r = Rect()
+                // In the window's coordinates, clipped by the parents and with their transformations
+                if (!view.getGlobalVisibleRect(r)) return EMPTY
+                return SessionRect(r.left.toDouble(), r.top.toDouble(), r.width().toDouble(), r.height().toDouble())
+            }
+
+        override val children: List<SessionMaskNode>
+            get() {
+                val out = mutableListOf<SessionMaskNode>()
+                if (view is RootForTest) out.add(SemanticsMaskNode(view.semanticsOwner.unmergedRootSemanticsNode))
+                if (view is ViewGroup) (0 until view.childCount).mapNotNullTo(out) { i -> view.getChildAt(i)?.let { ViewNode(it) } }
+                return out
+            }
     }
 
-    private fun isPassword(view: EditText): Boolean {
-        val type = view.inputType
-        val klass = type and InputType.TYPE_MASK_CLASS
-        val variation = type and InputType.TYPE_MASK_VARIATION
-        val text = klass == InputType.TYPE_CLASS_TEXT && (
-            variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
-                variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-                variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-            )
-        val number = klass == InputType.TYPE_CLASS_NUMBER && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
-        return text || number || view.transformationMethod is PasswordTransformationMethod
+    /** A Compose semantics node (unmerged). */
+    private class SemanticsMaskNode(private val node: SemanticsNode) : SessionMaskNode {
+        override val shown: Boolean get() = true
+
+        override val hidesWhole: Boolean
+            get() = SemanticsProperties.Password in node.config || isPassword(node.config.getOrNull(SemanticsProperties.ContentType))
+
+        override val bounds: SessionRect
+            get() {
+                val b = node.boundsInWindow
+                return SessionRect(b.left.toDouble(), b.top.toDouble(), b.width.toDouble(), b.height.toDouble())
+            }
+
+        override val children: List<SessionMaskNode> get() = node.children.map { SemanticsMaskNode(it) }
     }
 
-    private fun compose(node: SemanticsNode, out: MutableList<SessionRect?>) {
-        if (SemanticsProperties.Password in node.config) {
-            val b = node.boundsInWindow
-            out.add(SessionRect(b.left.toDouble(), b.top.toDouble(), b.width.toDouble(), b.height.toDouble()))
-        }
-        node.children.forEach { compose(it, out) }
-    }
-
-    private fun add(view: View, out: MutableList<SessionRect?>) {
-        if (view.visibility != View.VISIBLE || view.width == 0 || view.height == 0) return
-        val r = Rect()
-        // In the window's coordinates, clipped by the parents and with their transformations
-        if (!view.getGlobalVisibleRect(r)) return
-        out.add(SessionRect(r.left.toDouble(), r.top.toDouble(), r.width().toDouble(), r.height().toDouble()))
-    }
-
-    private fun children(group: ViewGroup): List<View> = (0 until group.childCount).mapNotNull { group.getChildAt(it) }
+    private val EMPTY = SessionRect(0.0, 0.0, 0.0, 0.0)
 }
