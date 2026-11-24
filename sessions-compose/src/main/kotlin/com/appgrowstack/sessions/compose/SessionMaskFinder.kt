@@ -9,7 +9,6 @@ import android.view.ViewGroup
 import android.view.Window
 import android.widget.EditText
 import androidx.compose.ui.autofill.ContentType
-import androidx.compose.ui.autofill.contentHints
 import androidx.compose.ui.node.RootForTest
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -45,7 +44,8 @@ internal object SessionMaskFinder {
             view.transformationMethod is PasswordTransformationMethod ||
             view.autofillHints?.any { SessionRules.isPasswordHint(it) } == true
 
-    fun isPassword(type: ContentType?): Boolean = type?.contentHints?.any { SessionRules.isPasswordHint(it) } == true
+    // contentHints is internal in compose-ui, so compare with the public constants
+    fun isPassword(type: ContentType?): Boolean = type == ContentType.Password || type == ContentType.NewPassword
 
     /** An Android view: a Compose view goes on into its semantics nodes, then into its `AndroidView`s. */
     private class ViewNode(private val view: View) : SessionMaskNode {
