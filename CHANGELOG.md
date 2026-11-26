@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-26
+
 ### Added
 
 - `AppSessions.noteDismissByApp()`: the app closes the current screen itself (a sheet that closes once a long
