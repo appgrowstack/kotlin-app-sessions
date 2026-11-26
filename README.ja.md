@@ -23,6 +23,21 @@ Androidアプリの中で人が何をしたかを、セッションごとに記�
 
 軽い記録は画素を持たない。録画は`AppSessions(replay = …)`を渡した時だけ撮る。`Modifier.sessionNoCapture()`を付けた画面は、見えている間と、Navigation Composeでその上に別の画面を開いている間（戻って閉じるまで）、録画を撮らない。ダイアログ・`ModalBottomSheet`など窓のフォーカスを取る物が出ている間も撮らない。今撮ると撮らない理由は`SessionCapture.blankReason(window, sessions, noCaptureScreens)`で分かる。
 
+### タップした物の名前
+
+タップには、指の下にある一番小さい`Modifier.sessionTarget("…")`の名前が付く。名前は指が触れた時に取る。長押しでシートが開いても、短いタップと同じ名前が付く。`Dialog`と`Popup`は別の窓なので、その下の行の名前は付かない。同じ窓の中に重ねて表示したレイヤー（`Box`で上に置くダイアログ・オンボーディング・ピッカー）は`SessionLayer { }`で包む。大きさは、そのレイヤーが覆う範囲（暗くした背景も含む）にする。指の下にレイヤーがある間は、その中の名前だけを見る。レイヤーの中で名前の無い所のタップは、下の行の名前でなく、名前なしになる。
+
+```kotlin
+Box {
+    HabitList()   // rows marked Modifier.sessionTarget("habit_row")
+    if (showTerms) {
+        SessionLayer(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f))) {
+            TermsDialog()   // its button marked Modifier.sessionTarget("terms_agree")
+        }
+    }
+}
+```
+
 ### アプリが自分で閉じる画面
 
 本人の操作の後に画面が自分で閉じるときは、閉じる直前に`noteDismissByApp()`を呼ぶ。
@@ -118,7 +133,7 @@ dependencies {
 | モジュール | 中身 |
 |---|---|
 | `sessions-core` | セッションの区切り・判定（`SessionRules`）・記録する`AppSessions`・バッチ・`SessionSink`と`FileSessionSink`と`DebugSessionSink`・`FileSessionStateStore`・`HangMonitor`・録画の塊（`SessionReplayRecorder`・`SessionReplaySegment`・`SessionReplaySink`）・ライブの口（`SessionLiveTransport`）・テスト用のフェイク |
-| `sessions-compose` | `SessionCapture`（録画のコマと`SessionReplayOptions`）・`AndroidSessionNetwork`・`SessionDeviceInfo.current`・`Modifier.sessionTarget`・`sessionScroll`・`sessionMask`・`sessionNoCapture` |
+| `sessions-compose` | `SessionCapture`（録画のコマと`SessionReplayOptions`）・`AndroidSessionNetwork`・`SessionDeviceInfo.current`・`Modifier.sessionTarget`・`SessionLayer`・`sessionScroll`・`sessionMask`・`sessionNoCapture` |
 
 ## 動く環境
 

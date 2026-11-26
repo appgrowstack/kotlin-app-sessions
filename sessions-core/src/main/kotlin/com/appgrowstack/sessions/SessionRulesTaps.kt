@@ -86,3 +86,24 @@ public class RageDetector(public var window: SessionSize) {
         return SessionRules.Rage(taps[2].t, SessionRules.fraction(origin.x, window.w), SessionRules.fraction(origin.y, window.h), taps.size)
     }
 }
+
+/**
+ * The name of a tap at ([x], [y]) from the marks under the screen, back to front (the order they are
+ * drawn in). The front layer is the deepest layer whose mark holds the point (the later one when two
+ * are as deep); only the targets of that layer count, or the targets outside every layer when no layer
+ * holds it. Of those, the smallest target holding the point names the tap (the later one when two are
+ * as small). A tap on a layer where none of its targets is under the finger has no name: a row under a
+ * dialog does not name a tap on the dialog.
+ */
+public fun SessionRules.tapTarget(x: Double, y: Double, marks: List<SessionRules.TapMark>): String? {
+    val under = marks.filter { it.contains(x, y) }
+    var front: List<String> = emptyList()
+    for (mark in under) if (mark.name == null && mark.layers.size >= front.size) front = mark.layers
+    var best: SessionRules.TapMark? = null
+    for (mark in under) {
+        if (mark.name == null || mark.layers != front) continue
+        val area = mark.frame.w * mark.frame.h
+        if (area <= (best?.let { it.frame.w * it.frame.h } ?: Double.MAX_VALUE)) best = mark
+    }
+    return best?.name
+}

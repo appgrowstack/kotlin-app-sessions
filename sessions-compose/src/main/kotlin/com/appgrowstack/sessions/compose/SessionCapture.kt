@@ -214,6 +214,11 @@ internal class SessionWindowCallback(
 ) : Window.Callback by delegate {
     private var downX = 0f
     private var downY = 0f
+    /**
+     * The tap's name, taken when the finger went down: the screen as the person saw it. A long press
+     * that opens a sheet or changes the row is named like a short tap on the same place.
+     */
+    private var downTarget: String? = null
 
     override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
         if (event != null) {
@@ -221,6 +226,7 @@ internal class SessionWindowCallback(
                 MotionEvent.ACTION_DOWN -> {
                     downX = event.x
                     downY = event.y
+                    downTarget = runCatching { SessionMarks.target(window, event.x, event.y) }.getOrNull()
                     runCatching { replay?.touchDown() }
                 }
                 MotionEvent.ACTION_UP -> {
@@ -250,8 +256,7 @@ internal class SessionWindowCallback(
         // A drag is a scroll, not a tap.
         if (dragged(event)) return
         val frame = SessionCapture.windowFrame(window) ?: return
-        val target = SessionMarks.target(window, event.x, event.y)
-        sessions.tap(frame.x + event.x / density, frame.y + event.y / density, frame, target)
+        sessions.tap(frame.x + event.x / density, frame.y + event.y / density, frame, downTarget)
     }
 }
 

@@ -23,6 +23,21 @@ English | [Japanese](README.ja.md)
 
 The light record keeps no pixels; the recording does only with `AppSessions(replay = …)`. A screen marked `Modifier.sessionNoCapture()` keeps the recording blank while it is shown and while it lies under the shown screen (a screen pushed on it with Navigation Compose), until it is popped. While a dialog, a `ModalBottomSheet` or anything else takes the window's focus, the recording is blank too. `SessionCapture.blankReason(window, sessions, noCaptureScreens)` gives the reason a frame taken now would be blank.
 
+### Naming what was tapped
+
+A tap takes the name of the smallest `Modifier.sessionTarget("…")` under the finger. The name is taken when the finger goes down, so a long press is named like a short tap even when it opens a sheet. A `Dialog` or a `Popup` is a window of its own, so a row under it never names a tap on it. A layer drawn over the screen in the same window (a dialog, an onboarding page or a picker laid on top in a `Box`) goes in `SessionLayer { }`, sized as the part of the screen it covers. While a layer is under the finger, only the targets inside it count; a tap on the layer where none of them is has no name, instead of the name of the row under it:
+
+```kotlin
+Box {
+    HabitList()   // rows marked Modifier.sessionTarget("habit_row")
+    if (showTerms) {
+        SessionLayer(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f))) {
+            TermsDialog()   // its button marked Modifier.sessionTarget("terms_agree")
+        }
+    }
+}
+```
+
 ### Screens the app closes itself
 
 When a screen closes itself after the person's action, call `noteDismissByApp()` right before closing it:
@@ -118,7 +133,7 @@ dependencies {
 | Module | What it has |
 |---|---|
 | `sessions-core` | Splitting sessions, the rules (`SessionRules`), the recorder `AppSessions`, batches, `SessionSink` with `FileSessionSink` and `DebugSessionSink`, `FileSessionStateStore`, `HangMonitor`, the recording's segments (`SessionReplayRecorder`, `SessionReplaySegment`, `SessionReplaySink`), the live view's port (`SessionLiveTransport`) and test doubles |
-| `sessions-compose` | `SessionCapture` (with the recording's frames and `SessionReplayOptions`), `AndroidSessionNetwork`, `SessionDeviceInfo.current`, `Modifier.sessionTarget`, `sessionScroll`, `sessionMask` and `sessionNoCapture` |
+| `sessions-compose` | `SessionCapture` (with the recording's frames and `SessionReplayOptions`), `AndroidSessionNetwork`, `SessionDeviceInfo.current`, `Modifier.sessionTarget`, `SessionLayer`, `sessionScroll`, `sessionMask` and `sessionNoCapture` |
 
 ## Requirements
 

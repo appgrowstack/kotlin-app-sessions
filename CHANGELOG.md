@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `SessionLayer { }`: a layer drawn over the screen in the same window (a dialog, an onboarding page, an offer, a
+  picker laid on top in a `Box`). While a layer is under the finger, only the `Modifier.sessionTarget`s inside it
+  name the tap; a tap on the layer where none of them is has no name. `SessionMarks.Kind.Layer`, and
+  `SessionMarks.Placed.layers` and `order`.
+- `SessionRules.tapTarget(x, y, marks)` and `SessionRules.TapMark`: the tap's name from the marks under the
+  screen, back to front. The same rule as swift-app-sessions.
+
+### Fixed
+
+- A tap on a layer drawn over the screen in the same window took the name of the target under it. With
+  `SessionLayer { }` around the layer, only its own targets count.
+- A long press was recorded without a name when it changed the screen: the name was taken when the finger left.
+  It is now taken when the finger goes down, for short taps too.
+
 ## [0.5.0] - 2026-11-26
 
 ### Added

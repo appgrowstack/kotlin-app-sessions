@@ -40,6 +40,18 @@ public object SessionRules {
 
     public data class NormalizedTap(val x: Int, val y: Int, val orientation: SessionOrientation, val col: Int, val row: Int, val cell: Int)
 
+    // ---- Tap name
+
+    /**
+     * A mark under the screen as the tap's name sees it: a named target (`Modifier.sessionTarget`, [name])
+     * or the root of a layer drawn over the screen (`Modifier.sessionLayer`, [name] null). [layers] is the
+     * path of layers the mark is in, outermost first; a layer's own mark ends with itself.
+     */
+    public data class TapMark(val name: String?, val frame: SessionRect, val layers: List<String> = emptyList()) {
+        internal fun contains(x: Double, y: Double): Boolean =
+            x >= frame.x && x < frame.x + frame.w && y >= frame.y && y < frame.y + frame.h
+    }
+
     // ---- Rage
 
     public data class Tap(val t: Long, val x: Double, val y: Double)

@@ -1,5 +1,5 @@
 // Android: 窓のタップ（Window.Callback）・前と裏・戻るのキー・ApplicationExitInfo・API 30 より前のクラッシュの受け手・
-// メインスレッドの止まり・Compose のマーク（Modifier.sessionTarget・sessionScroll・sessionMask・sessionNoCapture）。
+// メインスレッドの止まり・Compose のマーク（Modifier.sessionTarget・SessionLayer・sessionScroll・sessionMask・sessionNoCapture）。
 // 依存は sessions-core・Android の SDK・Compose の ui と foundation だけ。AGP 9 は Kotlin を内蔵しているので kotlin.android は付けない
 plugins {
     alias(libs.plugins.android.library)
