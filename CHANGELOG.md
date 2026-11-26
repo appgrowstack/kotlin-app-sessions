@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `AppSessions.noteDismissByApp()`: the app closes the current screen itself (a sheet that closes once a long
+  press is done); the move back within 1 second is a `back` but not a `quick_back`.
+- `foreground_ms` on `background` (`SessionEvent.Background.foregroundMs`) and `end`
+  (`SessionEvent.End.foregroundMs`): the time the session spent in the front.
+  `OpenSessionRecord.foregroundMs`, `foregroundSince` and `foregroundMsAt(t)`, `ClosedSessionRecord.foregroundMs`.
+
+### Changed
+
+- A session that stayed in the background for 30 minutes ends as soon as anything is recorded in the background
+  after that (an event of a job), at the time it went to the background. Before, the event joined the session and
+  stretched it.
+- A screen named while no session is open is the first screen of the next session (`LAUNCH`), so a session that
+  starts after a process without a screen, or after 30 minutes in the background, has its screen.
+- `start.first` is documented as the first session this SDK records on the install, not the app's first launch.
+
 ## [0.4.0] - 2026-11-24
 
 ### Added

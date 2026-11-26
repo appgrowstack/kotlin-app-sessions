@@ -158,6 +158,11 @@ public sealed interface SessionEvent {
     public val t: Long
     public val kind: String
 
+    /**
+     * `first`: the first session this SDK records on this install (again after a reinstall). Not the app's first
+     * launch: someone who used the app before an update brought the SDK has it too. Tell new people by the app's
+     * first-open event.
+     */
     public data class Start(override val t: Long, val previousEnd: SessionEndReason, val previousSessionId: String?, val first: Boolean) : SessionEvent {
         override val kind: String get() = "start"
     }
@@ -194,13 +199,15 @@ public sealed interface SessionEvent {
     public data class Hang(override val t: Long, val ms: Long) : SessionEvent {
         override val kind: String get() = "hang"
     }
-    public data class Background(override val t: Long) : SessionEvent {
+    /** `foregroundMs`: the time the session has been in the front so far. */
+    public data class Background(override val t: Long, val foregroundMs: Long? = null) : SessionEvent {
         override val kind: String get() = "background"
     }
     public data class Foreground(override val t: Long) : SessionEvent {
         override val kind: String get() = "foreground"
     }
-    public data class End(override val t: Long, val reason: SessionEndReason) : SessionEvent {
+    /** `foregroundMs`: the time the session was in the front, from its start to its end. */
+    public data class End(override val t: Long, val reason: SessionEndReason, val foregroundMs: Long? = null) : SessionEvent {
         override val kind: String get() = "end"
     }
     /**
@@ -244,8 +251,9 @@ public sealed interface SessionEvent {
             }
             is Mark -> { out["kind"] = markKind.wire; out["ref"] = ref; side?.let { out["side"] = it } }
             is Hang -> out["ms"] = ms
-            is Background, is Foreground -> Unit
-            is End -> out["reason"] = reason.wire
+            is Background -> foregroundMs?.let { out["foreground_ms"] = it }
+            is Foreground -> Unit
+            is End -> { out["reason"] = reason.wire; foregroundMs?.let { out["foreground_ms"] = it } }
             is ReplayStats -> {
                 out["captured"] = captured
                 out["dropped"] = mapOf(
@@ -281,9 +289,9 @@ public sealed interface SessionEvent {
                 }?.toMap() ?: emptyMap(), json["props_dropped"] == true)
                 "mark" -> Mark(t, SessionMarkKind.of(s("kind")), s("ref"), so("side"))
                 "hang" -> Hang(t, json["ms"].asLong())
-                "background" -> Background(t)
+                "background" -> Background(t, json["foreground_ms"]?.asLong())
                 "foreground" -> Foreground(t)
-                "end" -> End(t, SessionEndReason.of(s("reason")))
+                "end" -> End(t, SessionEndReason.of(s("reason")), json["foreground_ms"]?.asLong())
                 "replay_stats" -> {
                     val d = json["dropped"].asMap()
                     ReplayStats(

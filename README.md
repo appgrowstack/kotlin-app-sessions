@@ -6,8 +6,9 @@ English | [Japanese](README.ja.md)
 
 ## Features
 
-- **Sessions split the usual way.** The first activity of a launch starts one, and so does coming back after 30 minutes in the background. A process that shows nothing (a notification, a widget, WorkManager, an alarm) starts none
-- **Screens from your analytics events.** `screen_viewed` moves to its screen. Going back to the screen under the current one is a `pop`, recorded with `back` and, within 2 seconds of entering, `quick_back`. The back key is noted as the `via`
+- **Sessions split the usual way.** The first activity of a launch starts one, and so does coming back after 30 minutes in the background. A process that shows nothing (a notification, a widget, WorkManager, an alarm) starts none. The first session's `start` carries `first: true`: the first session this SDK records on the device, which is also true for someone who used the app before an update brought the SDK. Tell new people by the app's own first-open event
+- **Time in the front.** `background` and `end` carry `foreground_ms`, the time the session spent in the front, so a session left in the background is not counted as long. What a job in the background records more than 30 minutes after the app went there does not join the session
+- **Screens from your analytics events.** `screen_viewed` moves to its screen. Going back to the screen under the current one is a `pop`, recorded with `back` and, within 2 seconds of entering, `quick_back`. The back key is noted as the `via`. A screen the app closes itself (a sheet that closes once a long press is done) is not a quick back when the app calls `noteDismissByApp()` right before
 - **Taps without touching your touches.** Taps are read through `Window.Callback` on every activity's window, and every touch and key goes on to the app unchanged. Positions are 0–10000 of the window. `Modifier.sessionTarget("…")` names an element
 - **Rage taps.** Three or more taps within 1 second and 30 dp of the first
 - **Scroll depth.** `Modifier.sessionScroll(state, "…")` for a `verticalScroll` or a `LazyColumn`
@@ -21,6 +22,18 @@ English | [Japanese](README.ja.md)
 - **Few dependencies.** `sessions-core` uses Kotlin's standard library only; `sessions-compose` adds the Android SDK and Compose ui and foundation
 
 The light record keeps no pixels; the recording does only with `AppSessions(replay = …)`. A screen marked `Modifier.sessionNoCapture()` keeps the recording blank while it is shown and while it lies under the shown screen (a screen pushed on it with Navigation Compose), until it is popped. While a dialog, a `ModalBottomSheet` or anything else takes the window's focus, the recording is blank too. `SessionCapture.blankReason(window, sessions, noCaptureScreens)` gives the reason a frame taken now would be blank.
+
+### Screens the app closes itself
+
+When a screen closes itself after the person's action, call `noteDismissByApp()` right before closing it:
+
+```kotlin
+Modifier.combinedClickable(onClick = {}, onLongClick = {
+    store.achieve(habit)
+    AppSessions.current?.noteDismissByApp()  // the sheet closes itself: not a quick back
+    onDismiss()
+})
+```
 
 ### Where the records go
 

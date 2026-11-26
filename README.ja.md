@@ -6,8 +6,9 @@ Androidアプリの中で人が何をしたかを、セッションごとに記�
 
 ## 機能
 
-- **セッションの区切り。** 起動して最初のアクティビティが前に出たときに1つ始まり、バックグラウンドに30分いた後に戻ったときにも始まる。画面を出さないプロセス（通知・ウィジェット・WorkManager・アラーム）では始まらない
-- **画面は計測の出来事から。** `screen_viewed`でその画面へ動く。今の画面の下の画面へ戻るのは`pop`で、`back`と、入ってから2秒以内なら`quick_back`も記録する。戻るキーは`via`として残す
+- **セッションの区切り。** 起動して最初のアクティビティが前に出たときに1つ始まり、バックグラウンドに30分いた後に戻ったときにも始まる。画面を出さないプロセス（通知・ウィジェット・WorkManager・アラーム）では始まらない。最初のセッションの`start`は`first: true`を持つ。これは「このSDKがこの端末で記録する最初のセッション」で、SDKを入れたバージョンに上げた前からの利用者でもtrueになる。新しい人かどうかは、アプリの初回起動の出来事で見分ける
+- **前に出ていた時間。** `background`と`end`は`foreground_ms`（セッションが前に出ていた時間）を持つ。バックグラウンドに置いたままの時間でセッションが長く見えない。アプリがバックグラウンドに行って30分を過ぎてから、バックグラウンドの仕事が記録した物はセッションに入れない
+- **画面は計測の出来事から。** `screen_viewed`でその画面へ動く。今の画面の下の画面へ戻るのは`pop`で、`back`と、入ってから2秒以内なら`quick_back`も記録する。戻るキーは`via`として残す。アプリが自分で閉じる画面（長押しが終わると閉じるシートなど）は、閉じる直前に`noteDismissByApp()`を呼ぶと`quick_back`にしない
 - **タッチを止めないタップの記録。** 各アクティビティのウィンドウで`Window.Callback`を通してタップを読む。タッチとキーは全部そのままアプリに渡る。位置はウィンドウに対する0〜10000。`Modifier.sessionTarget("…")`で要素に名前を付ける
 - **rage tap。** 最初のタップから1秒以内・30dp以内に3回以上
 - **スクロールの深さ。** `verticalScroll`と`LazyColumn`に`Modifier.sessionScroll(state, "…")`を付ける
@@ -21,6 +22,18 @@ Androidアプリの中で人が何をしたかを、セッションごとに記�
 - **依存が少ない。** `sessions-core`はKotlinの標準ライブラリだけ。`sessions-compose`はAndroidのSDKとComposeのuiとfoundationを足す
 
 軽い記録は画素を持たない。録画は`AppSessions(replay = …)`を渡した時だけ撮る。`Modifier.sessionNoCapture()`を付けた画面は、見えている間と、Navigation Composeでその上に別の画面を開いている間（戻って閉じるまで）、録画を撮らない。ダイアログ・`ModalBottomSheet`など窓のフォーカスを取る物が出ている間も撮らない。今撮ると撮らない理由は`SessionCapture.blankReason(window, sessions, noCaptureScreens)`で分かる。
+
+### アプリが自分で閉じる画面
+
+本人の操作の後に画面が自分で閉じるときは、閉じる直前に`noteDismissByApp()`を呼ぶ。
+
+```kotlin
+Modifier.combinedClickable(onClick = {}, onLongClick = {
+    store.achieve(habit)
+    AppSessions.current?.noteDismissByApp()  // the sheet closes itself: not a quick back
+    onDismiss()
+})
+```
 
 ### 記録の送り先
 

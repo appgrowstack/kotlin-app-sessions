@@ -67,7 +67,7 @@ class AppSessionsTest {
         sessions.enterBackground()
         clock.advance(1_800_000)
         sessions.enterForeground()
-        assertEquals(SessionEvent.End(60_000, SessionEndReason.BACKGROUND_TIMEOUT), events(s1).last())
+        assertEquals(SessionEvent.End(60_000, SessionEndReason.BACKGROUND_TIMEOUT, 60_000), events(s1).last())
         assertEquals(SessionEvent.Start(0, SessionEndReason.BACKGROUND_TIMEOUT, s1, false), events(s2).first())
         assertEquals(screen(0, "bookshelf", SessionScreenVia.UNKNOWN), events(s2)[1])
     }
@@ -80,7 +80,7 @@ class AppSessionsTest {
         first.enterBackground()
         clock.advance(3_600_000)
         launch()
-        assertTrue(SessionEvent.End(5000, SessionEndReason.BACKGROUND_TIMEOUT) in events())
+        assertTrue(SessionEvent.End(5000, SessionEndReason.BACKGROUND_TIMEOUT, 5000) in events())
         assertEquals(SessionEvent.Start(0, SessionEndReason.BACKGROUND_TIMEOUT, s1, false), events().last())
     }
 
@@ -97,7 +97,7 @@ class AppSessionsTest {
         val batches = sink.batches.filter { it.session.sessionId == s1 }
         assertEquals(listOf(0, 1), batches.map { it.seq })
         assertEquals(listOf("screen", "tap", "end"), batches[1].events.map { it.kind })
-        assertEquals(SessionEvent.End(2000, SessionEndReason.KILLED), batches[1].events.last())
+        assertEquals(SessionEvent.End(2000, SessionEndReason.KILLED, 2000), batches[1].events.last())
     }
 
     @Test
@@ -105,7 +105,7 @@ class AppSessionsTest {
         launch()
         store.setHangMarker(true)
         launch()
-        assertTrue(SessionEvent.End(0, SessionEndReason.HUNG) in events())
+        assertTrue(SessionEvent.End(0, SessionEndReason.HUNG, 0) in events())
         assertFalse(store.hangMarker())
     }
 
@@ -125,7 +125,7 @@ class AppSessionsTest {
     fun uncaughtCrashBeforeApi30EndsAsCrashed() {
         launch().recordUncaughtCrash()
         launch(exit = SessionExitInfo(androidApi = 28))
-        assertTrue(SessionEvent.End(0, SessionEndReason.CRASHED) in events())
+        assertTrue(SessionEvent.End(0, SessionEndReason.CRASHED, 0) in events())
         assertEquals(false, store.stored?.crashRecorded)
     }
 
@@ -135,7 +135,7 @@ class AppSessionsTest {
         val second = launch(SessionPlatform.IOS)
         second.previousSessionCrashReported()
         val previous = sink.batches.filter { it.session.sessionId == s1 }
-        assertEquals(listOf(SessionEvent.End(0, SessionEndReason.KILLED), SessionEvent.End(0, SessionEndReason.CRASHED)),
+        assertEquals(listOf(SessionEvent.End(0, SessionEndReason.KILLED, 0), SessionEvent.End(0, SessionEndReason.CRASHED, 0)),
             previous.flatMap { it.events }.filterIsInstance<SessionEvent.End>())
         assertEquals(listOf(0, 1, 2), previous.map { it.seq })
         second.previousSessionCrashReported()
@@ -156,7 +156,7 @@ class AppSessionsTest {
         headless.tick()
         headless.flush()
         assertNull(headless.currentSessionId)
-        assertEquals(SessionEvent.End(0, SessionEndReason.KILLED), events(s1).last())
+        assertEquals(SessionEvent.End(0, SessionEndReason.KILLED, 0), events(s1).last())
         assertEquals(setOf(s1), sink.batches.map { it.session.sessionId }.toSet())
         assertNull(store.stored?.open)
         assertEquals(false, store.stored?.running)
@@ -202,6 +202,88 @@ class AppSessionsTest {
         sessions.flush()
         assertEquals(listOf("start", "screen", "background", "foreground"), kinds())
         assertEquals(s1, sessions.currentSessionId)
+    }
+
+    @Test
+    fun aScreenNamedBeforeTheFrontIsTheFirstScreenOfTheSession() {
+        val sessions = make()
+        sessions.closePrevious()
+        sessions.observe("screen_viewed", mapOf("screen" to SessionValue.Text("home")))
+        sessions.observe("memo_created", mapOf("view" to SessionValue.Text("list")))
+        assertNull(sessions.currentSessionId)
+        clock.advance(60_000)
+        sessions.enterForeground()
+        sessions.flush()
+        assertEquals(
+            listOf(SessionEvent.Start(0, SessionEndReason.UNKNOWN, null, true), screen(0, "home", SessionScreenVia.LAUNCH)),
+            events(s1),
+        )
+    }
+
+    @Test
+    fun aSessionLeftInTheBackEndsBeforeWhatAJobInTheBackRecords() {
+        val sessions = launch()
+        sessions.screen("bookshelf")
+        clock.advance(10_000)
+        sessions.enterBackground()
+        // A job in the back, 76 minutes later, in the same process
+        clock.advance(76 * 60_000L)
+        sessions.observe("memo_created", mapOf("view" to SessionValue.Text("list")))
+        assertNull(sessions.currentSessionId)
+        clock.advance(60_000)
+        sessions.enterForeground()
+        assertEquals(SessionEvent.End(10_000, SessionEndReason.BACKGROUND_TIMEOUT, 10_000), events(s1).last())
+        assertTrue(events(s1).none { it is SessionEvent.App })
+        assertEquals(
+            listOf(SessionEvent.Start(0, SessionEndReason.BACKGROUND_TIMEOUT, s1, false), screen(0, "bookshelf", SessionScreenVia.UNKNOWN)),
+            events(s2),
+        )
+    }
+
+    // ---- Time in the front
+
+    @Test
+    fun theTimeInTheFrontGoesWithBackgroundAndEnd() {
+        val sessions = launch()
+        clock.advance(20_000)
+        sessions.enterBackground()
+        clock.advance(10 * 60_000L)
+        sessions.enterForeground()
+        clock.advance(5000)
+        sessions.enterBackground()
+        clock.advance(1_800_000)
+        sessions.enterForeground()
+        assertEquals(
+            listOf(SessionEvent.Background(20_000, 20_000), SessionEvent.Background(625_000, 25_000)),
+            events(s1).filterIsInstance<SessionEvent.Background>(),
+        )
+        assertEquals(SessionEvent.End(625_000, SessionEndReason.BACKGROUND_TIMEOUT, 25_000), events(s1).last())
+    }
+
+    @Test
+    fun aSessionKilledInTheFrontCountsItsFrontToTheLastEvent() {
+        val first = launch()
+        clock.advance(3000)
+        first.enterBackground()
+        clock.advance(60_000)
+        first.enterForeground()
+        clock.advance(4000)
+        first.observe("book_added")
+        first.flush()
+        launch()
+        assertEquals(listOf(SessionEvent.End(67_000, SessionEndReason.KILLED, 7000)), events(s1).filterIsInstance<SessionEvent.End>())
+    }
+
+    @Test
+    fun aRecordKeptByAnOlderVersionSendsNoTimeInTheFront() {
+        val first = launch()
+        clock.advance(2000)
+        first.observe("book_added")
+        first.flush()
+        val kept = store.stored!!
+        store.save(kept.copy(open = kept.open!!.copy(foregroundMs = null, foregroundSince = null)))
+        launch()
+        assertEquals(listOf(SessionEvent.End(2000, SessionEndReason.KILLED, null)), events(s1).filterIsInstance<SessionEvent.End>())
     }
 
     // ---- Exit records
@@ -257,6 +339,46 @@ class AppSessionsTest {
             ),
             events().filter { it.kind in setOf("screen", "back", "quick_back") },
         )
+    }
+
+    @Test
+    fun aScreenTheAppClosesItselfIsNotAQuickBack() {
+        val sessions = launch()
+        sessions.screen("home")
+        clock.advance(5000)
+        sessions.screen("habit_achieve", SessionRules.NavigationOp.SHEET)
+        clock.advance(800)
+        // A long press achieved the habit and the sheet closes itself
+        sessions.noteDismissByApp()
+        clock.advance(300)
+        sessions.screen("home", SessionRules.NavigationOp.DISMISS)
+        // The person opens it again and closes it at once
+        clock.advance(2000)
+        sessions.screen("habit_achieve", SessionRules.NavigationOp.SHEET)
+        clock.advance(900)
+        sessions.screen("home", SessionRules.NavigationOp.DISMISS)
+        sessions.flush()
+        assertEquals(
+            listOf(
+                SessionEvent.Back(6100, "habit_achieve", SessionBackVia.BUTTON),
+                SessionEvent.Back(9000, "habit_achieve", SessionBackVia.BUTTON),
+                SessionEvent.QuickBack(9000, "habit_achieve", 900),
+            ),
+            events().filter { it.kind == "back" || it.kind == "quick_back" },
+        )
+    }
+
+    @Test
+    fun aDismissNotedLongBeforeDoesNotHideAQuickBack() {
+        val sessions = launch()
+        sessions.screen("home")
+        sessions.noteDismissByApp()
+        clock.advance(5000)
+        sessions.screen("habit_achieve", SessionRules.NavigationOp.SHEET)
+        clock.advance(500)
+        sessions.screen("home", SessionRules.NavigationOp.DISMISS)
+        sessions.flush()
+        assertEquals(1, kinds().count { it == "quick_back" })
     }
 
     @Test
@@ -454,6 +576,9 @@ class AppSessionsTest {
             SessionEvent.Start(0, SessionEndReason.UNKNOWN, null, true),
             SessionEvent.QuickBack(5, "a", 5),
             SessionEvent.App(6, "x", emptyMap(), false),
+            SessionEvent.Background(7, 7),
+            SessionEvent.End(7, SessionEndReason.BACKGROUND_TIMEOUT, 7),
+            SessionEvent.End(8, SessionEndReason.KILLED),
         ))
         val json = SessionJson.parse(batch.jsonText()).asMap()
         assertEquals(
@@ -465,6 +590,9 @@ class AppSessionsTest {
         assertEquals(setOf("k", "t", "previous_end", "first"), events[0].keys)
         assertEquals("quick_back", events[1]["k"])
         assertEquals(setOf("k", "t", "name"), events[2].keys)
+        assertEquals(setOf("k", "t", "foreground_ms"), events[3].keys)
+        assertEquals(setOf("k", "t", "reason", "foreground_ms"), events[4].keys)
+        assertEquals(setOf("k", "t", "reason"), events[5].keys)
         assertEquals(batch, SessionBatch.fromJson(json))
     }
 

@@ -72,6 +72,10 @@ public class AppSessions(
     private val stack = mutableListOf<String>()
     private var rage: RageDetector
     private var backHint: Pair<SessionBackVia, Long>? = null
+    /** When the app said it closes the current screen itself ([noteDismissByApp]). */
+    private var dismissByAppAt: Long? = null
+    /** The last screen named, kept while no session is open: a session that starts later starts on it. */
+    private var lastScreen: String? = null
     private val scrolls = sortedMapOf<String, SessionRules.ScrollDepth>()
     private val noCaptureHolds = mutableSetOf<NoCaptureHold>()
 
@@ -218,7 +222,10 @@ public class AppSessions(
             if (state.open == null || backgroundAt != null) return
             closeRage()
             val now = clock.nowMs()
-            record(SessionEvent.Background(t(now)))
+            val at = t(now)
+            val front = state.open?.foregroundMsAt(at)
+            record(SessionEvent.Background(at, front))
+            state = state.copy(open = state.open?.copy(foregroundMs = front, foregroundSince = null))
             backgroundAt = now
             state = state.copy(running = false)
             live?.close()
@@ -233,33 +240,42 @@ public class AppSessions(
 
     /**
      * The app came to the front. After [closePrevious] with no session yet, it starts the session; after
-     * 30 minutes in the back, a new one.
+     * 30 minutes in the back, a new one on the same screen.
      */
     public fun enterForeground() {
         synchronized(lock) {
-            val open = state.open
-            if (open == null) {
-                // No session yet in this process: its first screen starts one
-                if (!started) return
-                begin(state.lastClosed?.reason ?: SessionEndReason.UNKNOWN, state.lastClosed?.device?.sessionId)
-                save()
-                return@synchronized
-            }
-            val at = backgroundAt ?: return
-            backgroundAt = null
+            if (!started) return
             val now = clock.nowMs()
-            if (now - at >= SessionRules.BACKGROUND_TIMEOUT_MS) {
-                val screen = navigator.current
-                close(open, at - open.device.startedAt, SessionEndReason.BACKGROUND_TIMEOUT, "background", false, pendingScrolls(at - open.device.startedAt))
-                begin(SessionEndReason.BACKGROUND_TIMEOUT, open.device.sessionId)
-                if (screen != null) enterScreen(screen, SessionScreenVia.UNKNOWN)
-            } else {
+            expireIfTimedOut(now)
+            if (state.open == null) {
+                // No session yet in this process (it started without a screen), or the last one timed out in the back
+                val resumed = backgroundAt != null
+                begin(state.lastClosed?.reason ?: SessionEndReason.UNKNOWN, state.lastClosed?.device?.sessionId)
+                lastScreen?.let { enterScreen(it, if (resumed) SessionScreenVia.UNKNOWN else SessionScreenVia.LAUNCH) }
+            } else if (backgroundAt != null) {
+                backgroundAt = null
                 record(SessionEvent.Foreground(t(now)))
-                state = state.copy(running = true)
+                state = state.copy(running = true, open = state.open?.copy(foregroundSince = t(now)))
+            } else {
+                return
             }
             save()
         }
         flush()
+    }
+
+    /**
+     * A session left in the back for 30 minutes or more ends now, at the time it went to the back, so what a
+     * job in the back records later does not join it (nor its length). Called with the lock held.
+     */
+    private fun expireIfTimedOut(now: Long) {
+        val open = state.open ?: return
+        val at = backgroundAt ?: return
+        if (now - at < SessionRules.BACKGROUND_TIMEOUT_MS) return
+        val endT = maxOf(0, at - open.device.startedAt)
+        close(open, endT, SessionEndReason.BACKGROUND_TIMEOUT, "background", false, pendingScrolls(endT))
+        // Its batches go with the next flush (the next time in the front, or the next launch)
+        save()
     }
 
     /**
@@ -288,8 +304,10 @@ public class AppSessions(
      * first screen of a session is `launch`, and anything else is `push`.
      */
     public fun screen(name: String, op: SessionRules.NavigationOp? = null, by: SessionBackVia? = null): Unit = synchronized(lock) {
-        if (state.open == null || name == navigator.current) return
         val now = clock.nowMs()
+        expireIfTimedOut(now)
+        lastScreen = name
+        if (state.open == null || name == navigator.current) return
         val move = op ?: when {
             navigator.current == null -> SessionRules.NavigationOp.LAUNCH
             stack.size >= 2 && stack[stack.size - 2] == name -> SessionRules.NavigationOp.POP
@@ -301,6 +319,9 @@ public class AppSessions(
         val goingBack = move == SessionRules.NavigationOp.POP || move == SessionRules.NavigationOp.DISMISS
         if (via == null && goingBack && hint != null && now - hint.second <= configuration.backHintMs) via = hint.first
         backHint = null
+        // The app closed the screen itself ([noteDismissByApp]): going back is not the person's quick back
+        val byApp = goingBack && dismissByAppAt?.let { now - it <= configuration.backHintMs } == true
+        dismissByAppAt = null
         val events = navigator.move(SessionRules.NavigationStep(t(now), move, name, via))
         when (move) {
             SessionRules.NavigationOp.LAUNCH, SessionRules.NavigationOp.TAB -> { stack.clear(); stack.add(name) }
@@ -315,10 +336,17 @@ public class AppSessions(
                 is SessionRules.NavigationEvent.Screen ->
                     record(SessionEvent.Screen(event.t, event.screen, event.via, window.w, window.h, window.size.orientation))
                 is SessionRules.NavigationEvent.Back -> record(SessionEvent.Back(event.t, event.screen, event.via))
-                is SessionRules.NavigationEvent.QuickBack -> record(SessionEvent.QuickBack(event.t, event.screen, event.ms))
+                is SessionRules.NavigationEvent.QuickBack -> if (!byApp) record(SessionEvent.QuickBack(event.t, event.screen, event.ms))
             }
         }
     }
+
+    /**
+     * The app is closing the current screen itself, not the person going back: a sheet that closes once its
+     * work is done (after a long press, a save). The move back that follows within 1 second
+     * ([Configuration.backHintMs]) is still a `back`, but not a `quick_back`. Call it right before closing the screen.
+     */
+    public fun noteDismissByApp(): Unit = synchronized(lock) { dismissByAppAt = clock.nowMs() }
 
     /** A back gesture (`GESTURE`) or the back key (`SYSTEM`) is happening; the next screen change that goes back takes it as its `via`. */
     public fun noteBack(via: SessionBackVia): Unit = synchronized(lock) { backHint = via to clock.nowMs() }
@@ -370,6 +398,7 @@ public class AppSessions(
     }
 
     public fun keyboard(shown: Boolean): Unit = synchronized(lock) {
+        expireIfTimedOut(clock.nowMs())
         if (state.open == null) return
         record(SessionEvent.Keyboard(t(clock.nowMs()), shown))
     }
@@ -382,11 +411,12 @@ public class AppSessions(
      * A null value stands for one that is not text, a number or yes/no; it is not kept.
      */
     public fun observe(name: String, props: Map<String, SessionValue?> = emptyMap(), source: SessionRules.EventSource? = null): Unit = synchronized(lock) {
-        if (state.open == null) return
+        expireIfTimedOut(clock.nowMs())
         if (name == "screen_viewed") {
             val screen = (props["screen"] as? SessionValue.Text)?.value
             if (screen != null && SCREEN_NAME.matches(screen)) screen(screen)
         }
+        if (state.open == null) return
         val now = t(clock.nowMs())
         val from = source ?: if (name in SessionRules.COMMON_CATALOG) SessionRules.EventSource.COMMON else SessionRules.EventSource.APP
         val kept = SessionRules.keepProps(from, name, props, configuration.keepProps)
@@ -397,6 +427,7 @@ public class AppSessions(
 
     /** A mark the app knows of without an event (a ticket sent from the support SDK). */
     public fun mark(kind: SessionMarkKind, ref: String, side: String? = null): Unit = synchronized(lock) {
+        expireIfTimedOut(clock.nowMs())
         if (state.open == null || ref.isEmpty()) return
         record(SessionEvent.Mark(t(clock.nowMs()), kind, ref.take(80), side))
     }
@@ -432,7 +463,7 @@ public class AppSessions(
             )
             val revised = decision.revised ?: return
             if (revised == closed.reason) return
-            appendToOutbox(SessionBatch(closed.device, closed.nextSeq, listOf(SessionEvent.End(closed.endT, revised))))
+            appendToOutbox(SessionBatch(closed.device, closed.nextSeq, listOf(SessionEvent.End(closed.endT, revised, closed.foregroundMs))))
             state = state.copy(lastClosed = closed.copy(nextSeq = closed.nextSeq + 1, reason = revised))
             save()
         }
@@ -640,6 +671,8 @@ public class AppSessions(
         val info = deviceInfo()
         val installId = (info.installId ?: state.installId ?: ids.makeInstallId()).lowercase()
         val device = SessionDevice(ids.makeSessionId(), now, installId, info)
+        // `first`: the first session this SDK records on this install, not the app's first launch (an update
+        // that brings the SDK makes it true too). Who is new is told by `first_open`.
         val first = !state.hadSession
         state = state.copy(
             installId = installId, hadSession = true, running = true,
@@ -648,6 +681,8 @@ public class AppSessions(
             },
         )
         disabled = false
+        backgroundAt = null
+        dismissByAppAt = null
         replayMode = SessionReplayMode.BUFFER
         live?.close()
         live = null
@@ -672,25 +707,31 @@ public class AppSessions(
 
     /** Ends `open`: the scroll depths it still had, `end`, and its batches into the outbox. */
     private fun close(open: OpenSessionRecord, endT: Long, reason: SessionEndReason, lastKind: String?, runningFlag: Boolean, scrolls: List<SessionEvent.Scroll>) {
+        val front = open.foregroundMsAt(endT)
+        val end = SessionEvent.End(endT, reason, front)
         var pending = open.pending
-        if (!disabled) pending = pending + listOfNotNull(replayStats(endT)) + scrolls.map { it.copy(t = endT) } + SessionEvent.End(endT, reason)
+        if (!disabled) pending = pending + listOfNotNull(replayStats(endT)) + scrolls.map { it.copy(t = endT) } + end
         state = state.copy(open = open.copy(pending = pending))
         batchPending()
         val next = state.open?.nextSeq ?: open.nextSeq
-        state = state.copy(open = null, lastClosed = ClosedSessionRecord(open.device, next, endT, reason, lastKind, runningFlag))
-        closeReplay(open, endT, reason)
+        state = state.copy(open = null, lastClosed = ClosedSessionRecord(open.device, next, endT, reason, lastKind, runningFlag, front))
+        closeReplay(open, end)
+        lastFingerprint = null
+        deadCandidates.clear()
+        afterTaps.clear()
     }
 
     /**
      * The recording of a session that ended: it is sent when it records, when a priority condition was met
      * (with its end, now) or when it crashed, hung or was killed; anything else of it is removed.
      */
-    private fun closeReplay(open: OpenSessionRecord, endT: Long, reason: SessionEndReason) {
+    private fun closeReplay(open: OpenSessionRecord, end: SessionEvent.End) {
         val recorder = replay ?: return
         val id = open.device.sessionId
+        val reason = end.reason
         live?.close()
         recorder.closeOpen()
-        val hits = SessionRules.priorityHits(open.priorityEvents + SessionEvent.End(endT, reason))
+        val hits = SessionRules.priorityHits(open.priorityEvents + end)
         val crashed = reason == SessionEndReason.CRASHED || reason == SessionEndReason.HUNG || reason == SessionEndReason.KILLED
         if (hits.isNotEmpty() || crashed) updateReplay(id) { it.copy(priority = true) }
         val record = replayRecord(id)

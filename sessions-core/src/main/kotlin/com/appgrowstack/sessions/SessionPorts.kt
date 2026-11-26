@@ -46,7 +46,17 @@ public data class OpenSessionRecord(
     val scrolls: List<SessionEvent.Scroll> = emptyList(),
     /** The events [SessionRules.priorityHits] reads (start, rage, dead, hang, marks, `paywall_closed`), to decide whether its recording is sent. */
     val priorityEvents: List<SessionEvent> = emptyList(),
-)
+    /** The time in the front up to the last time it went to the back (null: kept by an older version). */
+    val foregroundMs: Long? = 0,
+    /** When (`t`) it last came to the front, null while it is in the back. */
+    val foregroundSince: Long? = 0,
+) {
+    /** The time in the front from the start to `t`, or null when an older version kept the record. */
+    public fun foregroundMsAt(t: Long): Long? {
+        val front = foregroundMs ?: return null
+        return front + maxOf(0, t - (foregroundSince ?: t))
+    }
+}
 
 /**
  * A session's recording as the device keeps it until its segments are sent or removed. `answered`:
@@ -86,6 +96,8 @@ public data class ClosedSessionRecord(
     val reason: SessionEndReason,
     val lastKind: String?,
     val runningFlag: Boolean,
+    /** The time it was in the front, sent again with a revised `end`. */
+    val foregroundMs: Long? = null,
 )
 
 public data class SessionStoredState(
@@ -117,12 +129,13 @@ public data class SessionStoredState(
                 "device" to it.device.toJson(), "next_seq" to it.nextSeq, "last_kind" to it.lastKind, "last_t" to it.lastT,
                 "pending" to it.pending.map(SessionEvent::toJson), "scrolls" to it.scrolls.map(SessionEvent::toJson),
                 "priority_events" to it.priorityEvents.map(SessionEvent::toJson),
+                "foreground_ms" to it.foregroundMs, "foreground_since" to it.foregroundSince,
             )
         },
         "last_closed" to lastClosed?.let {
             mapOf(
                 "device" to it.device.toJson(), "next_seq" to it.nextSeq, "end_t" to it.endT, "reason" to it.reason.wire,
-                "last_kind" to it.lastKind, "running_flag" to it.runningFlag,
+                "last_kind" to it.lastKind, "running_flag" to it.runningFlag, "foreground_ms" to it.foregroundMs,
             )
         },
         "outbox" to outbox.map(SessionBatch::toJson),
@@ -144,6 +157,7 @@ public data class SessionStoredState(
                     m["pending"].asList().map { e -> SessionEvent.fromJson(e.asMap()) },
                     (m["scrolls"] as List<*>?)?.map { e -> SessionEvent.fromJson(e.asMap()) as SessionEvent.Scroll } ?: emptyList(),
                     (m["priority_events"] as List<*>?)?.map { e -> SessionEvent.fromJson(e.asMap()) } ?: emptyList(),
+                    m["foreground_ms"]?.asLong(), m["foreground_since"]?.asLong(),
                 )
             },
             lastClosed = (json["last_closed"] as Map<*, *>?)?.let {
@@ -151,6 +165,7 @@ public data class SessionStoredState(
                 ClosedSessionRecord(
                     SessionDevice.fromJson(m["device"].asMap()), m["next_seq"].asInt(), m["end_t"].asLong(),
                     SessionEndReason.of(m["reason"] as String), m["last_kind"] as String?, m["running_flag"] == true,
+                    m["foreground_ms"]?.asLong(),
                 )
             },
             outbox = (json["outbox"] as List<*>?)?.map { SessionBatch.fromJson(it.asMap()) } ?: emptyList(),
