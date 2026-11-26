@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-27
+
 ### Added
 
 - `SessionLayer { }`: a layer drawn over the screen in the same window (a dialog, an onboarding page, an offer, a
